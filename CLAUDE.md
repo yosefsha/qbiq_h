@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Coding Instructions
 
-See [docs/coding-instructions.md](docs/coding-instructions.md) for full coding standards covering Python/FastAPI and React/TypeScript — project structure, code style, testing, and build commands.
+See [docs/coding-instructions.md](docs/coding-instructions.md) for full coding standards covering Python/FastAPI and Vue/TypeScript — project structure, code style, testing, and build commands.
 
 ## Infrastructure & Configuration (AWS + Python CDK)
 
@@ -20,7 +20,7 @@ infra/
     __init__.py
     network_stack.py   # VPC, subnets, security groups
     backend_stack.py   # ECS/Fargate service for FastAPI
-    frontend_stack.py  # S3 + CloudFront for React SPA
+    frontend_stack.py  # S3 + CloudFront for Vue SPA
     pipeline_stack.py  # CodePipeline CI/CD
   config/
     prod.py            # Production environment config
@@ -36,7 +36,7 @@ infra/
 - Secrets (DB credentials, API keys) stored in **AWS Secrets Manager**, injected as environment variables via ECS task definition — never baked into images.
 - Use **ECR** for container image registry.
 
-### Frontend (React SPA on S3 + CloudFront)
+### Frontend (Vue SPA on S3 + CloudFront)
 - `npm run build` output deployed to an **S3 bucket** (private, no public access).
 - **CloudFront** distribution with OAC (Origin Access Control) to serve from S3.
 - Custom domain via **Route 53** alias record to CloudFront.

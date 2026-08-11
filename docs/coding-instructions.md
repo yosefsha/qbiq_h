@@ -47,35 +47,48 @@ config/
 
 ---
 
-## React / TypeScript
+## Vue / TypeScript
 
 ### Project Structure
 ```
 src/
-  main.tsx            # Entry point
-  App.tsx             # Root component
+  main.ts             # Entry point (createApp)
+  App.vue             # Root component
   types.ts            # Shared type definitions
   parser.ts           # Pure utility functions
   components/
-    <Name>.tsx        # One component per file, PascalCase filename
+    <Name>.vue        # One component per file, PascalCase filename
+  composables/
+    use<Name>.ts      # Reusable stateful logic, camelCase `use` prefix
 ```
 
 ### Code Style
-- Functional components only — no class components.
-- Define props as a standalone `interface Props` above the component.
-- Use named exports for all components (exception: root `App`).
+- Single-File Components with `<script setup lang="ts">` only — no Options API, no `defineComponent` wrappers.
+- Declare props with type-only `defineProps<Props>()` against a standalone `interface Props` above the template usage; declare events with type-only `defineEmits<{ ... }>()`.
+- Use `withDefaults()` (or default values in the destructured props) for optional props — no runtime prop objects.
+- One component per `.vue` file; the filename is the component name (`PascalCase.vue`).
 - `camelCase` for functions/variables, `PascalCase` for components/types/interfaces.
-- Keep parsing and transformation logic in pure functions outside components.
+- Keep parsing and transformation logic in pure functions outside components (`parser.ts`, not inside SFCs).
 - Shared types go in `types.ts`, not scattered across components.
+- Extract reusable stateful logic into composables (`use*.ts`) rather than mixins.
 
-### State & Effects
-- Use `useEffect` cleanup functions for mount/unmount lifecycle work.
-- Derive state from props where possible instead of duplicating into local state.
+### State & Reactivity
+- Use `ref()` for primitives and `reactive()` sparingly for object state; prefer `ref` for consistency.
+- Use `computed()` to derive state from props instead of duplicating props into local refs.
+- Use `watch` / `watchEffect` for side effects; return or register cleanup via the `onCleanup` callback.
+- Use `onMounted` / `onUnmounted` for lifecycle work, and always tear down subscriptions, timers, and listeners in `onUnmounted`.
+- Never mutate props — emit an event or use `defineModel()` for two-way binding.
+- Reach for Pinia only when state is genuinely shared across unrelated components; local state and props stay local.
+
+### Templates
+- Always pair `v-for` with a stable `:key`; never put `v-if` and `v-for` on the same element.
+- Prefer `<template v-if>` blocks over deeply nested conditional markup.
 
 ### Layout
-- Use CSS Grid or Flexbox via inline styles unless a CSS framework is adopted.
+- Use CSS Grid or Flexbox in `<style scoped>` blocks unless a CSS framework is adopted.
+- Component styles must be `scoped`; global styles live in a single top-level stylesheet.
 
 ### Build & Lint
 - `npm run dev` — Vite dev server with HMR.
-- `npm run build` — Type-check (`tsc -b`) then Vite production build.
-- `npm run lint` — ESLint.
+- `npm run build` — Type-check (`vue-tsc -b`) then Vite production build.
+- `npm run lint` — ESLint (`eslint-plugin-vue`, `vue3-recommended` ruleset).
