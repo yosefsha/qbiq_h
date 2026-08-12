@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import logging
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
@@ -44,7 +45,10 @@ class SessionId:
     or exposed anywhere but the `HttpOnly` cookie it travels in.
     """
 
-    value: str
+    # repr=False so the generated __repr__ cannot print the token. The rule
+    # above is otherwise only aspirational: any f-string, debugger frame dump,
+    # or error reporter that touches a SessionId would leak a live credential.
+    value: str = field(repr=False)
 
     @property
     def redis_key(self) -> str:
@@ -98,9 +102,14 @@ class SessionStore:
         try:
             await self._redis.set(session_id.redis_key, "1", ex=self._ttl_seconds)
         except RedisError:
+            # Deliberately logs no identifier. `python-json-logger` promotes
+            # every `extra` key to a top-level JSON field, so passing the
+            # redis key here would write `session:{token}` — a live bearer
+            # credential — into CloudWatch on every request for the duration
+            # of an outage, where 30-day retention keeps it readable by anyone
+            # with log access.
             logger.error(
-                "session store unreachable; cookie issued without a Redis record",
-                extra={"redis_key": session_id.redis_key},
+                "session store unreachable; cookie issued without a Redis record"
             )
 
 
@@ -130,19 +139,57 @@ def _set_session_cookie(response: Response, session_id: SessionId) -> None:
     )
 
 
-async def get_session(request: Request, response: Response) -> SessionId:
+#: Request-state attribute carrying the session for `SessionCookieMiddleware`
+#: to write out. Set only by `get_session`, so a route that never asks for a
+#: session — `/health`, hit continuously by the ALB — neither touches Redis
+#: nor receives a cookie.
+_REQUEST_STATE_ATTR = "session_id"
+
+
+class SessionCookieMiddleware(BaseHTTPMiddleware):
+    """Writes the session cookie onto the real outgoing response.
+
+    The cookie cannot be set from the `get_session` dependency alone. FastAPI
+    merges a dependency's sub-response headers only when the handler returns a
+    non-`Response` value; when it returns a `Response` directly (a 204, a
+    `JSONResponse`) or raises, those headers are dropped. A first-time Shopper
+    whose very first Cart call 422s or 204s would then get no cookie at all,
+    orphaning the Redis record and losing their Cart on the next request.
+
+    Setting it here also makes the TTL genuinely sliding: the cookie is
+    rewritten on every request that used a session, so an active Shopper's
+    browser-side expiry keeps moving. Issuing it only at mint time meant the
+    browser dropped the cookie a fixed interval after first contact no matter
+    how recently the Shopper had clicked.
+    """
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        response = await call_next(request)
+        session_id = getattr(request.state, _REQUEST_STATE_ATTR, None)
+        if session_id is not None:
+            _set_session_cookie(response, session_id)
+        return response
+
+
+async def get_session(request: Request) -> SessionId:
     """FastAPI dependency identifying the anonymous Shopper making the request.
 
     Reuses the `session_id` cookie when present and well-formed; otherwise
-    mints a new opaque token and sets it as the response cookie. Every call
-    refreshes the sliding TTL on the Redis-backed session record. Route
-    handlers should depend on this rather than reading the cookie
-    themselves, so session plumbing lives in exactly one place.
+    mints a new opaque token. Every call refreshes the sliding TTL on the
+    Redis-backed session record. Route handlers should depend on this rather
+    than reading the cookie themselves, so session plumbing lives in exactly
+    one place.
+
+    The cookie itself is written by `SessionCookieMiddleware` — see there for
+    why it cannot be set from here.
     """
     session_id = _read_session_cookie(request)
     if session_id is None:
         session_id = _mint_session_id()
-        _set_session_cookie(response, session_id)
+
+    setattr(request.state, _REQUEST_STATE_ATTR, session_id)
 
     store = SessionStore(get_redis_client(), settings.session_ttl_seconds)
     await store.touch(session_id)

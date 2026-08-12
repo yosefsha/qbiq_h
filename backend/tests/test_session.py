@@ -17,11 +17,13 @@ modules runs afterwards in the same pytest process.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import secrets
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 
@@ -71,10 +73,33 @@ def _build_app(monkeypatch: pytest.MonkeyPatch, *, settings: Settings) -> FastAP
     monkeypatch.setattr(session_module, "get_redis_client", lambda: test_client)
 
     app = FastAPI()
+    app.add_middleware(session_module.SessionCookieMiddleware)
 
     @app.get("/whoami")
     async def whoami(session_id: SessionId = Depends(session_module.get_session)):
         return {"session_id": session_id.value}
+
+    # The routes below exist because a handler returning a dict is the ONLY
+    # shape for which FastAPI merges a dependency's sub-response headers. Each
+    # of these is a shape a real Cart route takes, and each one silently lost
+    # the cookie before the middleware existed.
+    @app.get("/direct-response")
+    async def direct_response(
+        session_id: SessionId = Depends(session_module.get_session),
+    ):
+        return JSONResponse({"session_id": session_id.value})
+
+    @app.delete("/no-content", status_code=204)
+    async def no_content(session_id: SessionId = Depends(session_module.get_session)):
+        return Response(status_code=204)
+
+    @app.post("/rejects")
+    async def rejects(session_id: SessionId = Depends(session_module.get_session)):
+        raise HTTPException(status_code=422, detail="deliberate")
+
+    @app.get("/no-session")
+    async def no_session():
+        return {"ok": True}
 
     return app
 
@@ -103,16 +128,101 @@ def test_first_request_without_cookie_receives_one(client: TestClient) -> None:
     assert response.json()["session_id"] == issued
 
 
-def test_second_request_reuses_cookie_and_issues_no_new_one(
+def test_second_request_reuses_the_session_and_reissues_the_cookie(
     client: TestClient,
 ) -> None:
+    """The cookie is rewritten on every request, which is what makes the TTL slide.
+
+    This previously asserted that no second `Set-Cookie` was sent. That was
+    asserting a bug: `Max-Age` is absolute, so a cookie issued once expires a
+    fixed interval after first contact no matter how active the Shopper is.
+    A Shopper browsing continuously past SESSION_TTL_SECONDS would have the
+    browser drop the cookie while the Redis record was still being refreshed,
+    stranding a live Cart.
+    """
     first = client.get("/whoami")
     first_session_id = first.json()["session_id"]
 
     second = client.get("/whoami")
 
-    assert "set-cookie" not in {k.lower() for k in second.headers.keys()}
     assert second.json()["session_id"] == first_session_id
+    assert "set-cookie" in {k.lower() for k in second.headers.keys()}
+    assert f"session_id={first_session_id}" in second.headers["set-cookie"]
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "expected_status"),
+    [
+        ("GET", "/direct-response", 200),
+        ("DELETE", "/no-content", 204),
+        ("POST", "/rejects", 422),
+    ],
+)
+def test_cookie_survives_responses_fastapi_does_not_merge_headers_into(
+    client: TestClient, method: str, path: str, expected_status: int
+) -> None:
+    """A first-time Shopper must get a cookie however the handler responded.
+
+    FastAPI merges a dependency's sub-response headers only when the handler
+    returns a non-Response value. A handler returning a JSONResponse or a 204,
+    or raising, drops them — so a Shopper whose first Cart call was a 422 or a
+    DELETE got no cookie, orphaning the Redis record and losing the Cart on
+    the next request.
+    """
+    response = client.request(method, path)
+
+    assert response.status_code == expected_status
+    assert response.cookies.get("session_id")
+
+
+def test_route_without_the_dependency_gets_no_cookie(client: TestClient) -> None:
+    """`/health` is hit continuously by the ALB; it must not mint sessions."""
+    response = client.get("/no-session")
+
+    assert response.status_code == 200
+    assert "set-cookie" not in {k.lower() for k in response.headers.keys()}
+
+
+def test_session_token_is_never_written_to_the_log_stream(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A Redis outage must not log the bearer token.
+
+    `python-json-logger` promotes every `extra` key to a top-level JSON field,
+    so an identifier passed there lands in CloudWatch — with 30-day retention —
+    as a still-valid credential, once per request for the whole outage.
+    """
+    settings = _test_settings()
+    unreachable = Redis.from_url(
+        "redis://127.0.0.1:1/0", socket_connect_timeout=1, socket_timeout=1
+    )
+    import app.session as session_module
+
+    monkeypatch.setattr(session_module, "settings", settings)
+    monkeypatch.setattr(session_module, "get_redis_client", lambda: unreachable)
+
+    app = FastAPI()
+    app.add_middleware(session_module.SessionCookieMiddleware)
+
+    @app.get("/whoami")
+    async def whoami(session_id: SessionId = Depends(session_module.get_session)):
+        return {"session_id": session_id.value}
+
+    with caplog.at_level(logging.ERROR, logger="app.session"):
+        with TestClient(app) as test_client:
+            response = test_client.get("/whoami")
+
+    token = response.cookies["session_id"]
+    assert token
+    for record in caplog.records:
+        assert token not in record.getMessage()
+        assert token not in str(record.__dict__)
+
+
+def test_session_id_repr_does_not_leak_the_token() -> None:
+    session_id = SessionId("s" * 43)
+
+    assert "s" * 43 not in repr(session_id)
 
 
 def test_cookie_is_httponly_samesite_lax(client: TestClient) -> None:
@@ -202,6 +312,10 @@ def test_redis_outage_does_not_fail_session_issuance(
     app = FastAPI()
 
     import app.session as session_module
+
+    # The cookie is written by the middleware, not by the dependency — any app
+    # mounting `get_session` must register this too.
+    app.add_middleware(session_module.SessionCookieMiddleware)
 
     monkeypatch.setattr(session_module, "settings", unreachable_settings)
     unreachable_client = Redis.from_url(
