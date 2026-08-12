@@ -67,4 +67,44 @@ describe('CartBadge', () => {
 
     expect(wrapper.find('[data-test="cart-badge-count"]').exists()).toBe(false)
   })
+
+  describe('accessibility', () => {
+    it('gives screen readers item-count context beyond the bare number, for the "Cart" link it sits inside', () => {
+      const store = useCartStore()
+      store.cart = cart({
+        items: [
+          { productId: '1', name: 'Widget', unitPriceMinor: 1000, quantity: 2, subtotalMinor: 2000 },
+          { productId: '2', name: 'Gadget', unitPriceMinor: 500, quantity: 3, subtotalMinor: 1500 },
+        ],
+      })
+
+      const wrapper = mount(CartBadge)
+
+      // The visible number alone ("5") is ambiguous out of context; this
+      // text is what actually reaches the accessible name of the enclosing
+      // "Cart" link (App.vue), e.g. "Cart, 5 items".
+      expect(wrapper.text()).toContain('5 items')
+    })
+
+    it('hides the bare visible number from assistive tech, since the sr-only text already covers it', () => {
+      const store = useCartStore()
+      store.cart = cart()
+
+      const wrapper = mount(CartBadge)
+
+      expect(wrapper.get('[data-test="cart-badge-count"]').attributes('aria-hidden')).toBe('true')
+    })
+
+    it('uses the singular "item" for a single item', () => {
+      const store = useCartStore()
+      store.cart = cart({
+        items: [{ productId: '1', name: 'Widget', unitPriceMinor: 1000, quantity: 1, subtotalMinor: 1000 }],
+      })
+
+      const wrapper = mount(CartBadge)
+
+      expect(wrapper.text()).toContain('1 item')
+      expect(wrapper.text()).not.toContain('1 items')
+    })
+  })
 })

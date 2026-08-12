@@ -17,11 +17,15 @@ const price = computed(() => formatMoney(props.product.priceMinor, props.product
 <template>
   <RouterLink
     :to="`/products/${product.id}`"
-    class="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-slate-300 hover:shadow-md"
+    class="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-slate-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
   >
+    <!-- Decorative: the product name right below is the same information in
+         text, and the whole card is a single link to the same destination —
+         a screen reader announcing the name twice (image, then heading) adds
+         noise without adding information. -->
     <img
       :src="product.thumbnailUrl"
-      :alt="product.name"
+      alt=""
       class="aspect-video w-full bg-slate-100 object-cover"
       loading="lazy"
     >

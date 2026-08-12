@@ -56,9 +56,9 @@ function remove(): void {
     <div class="flex items-center gap-2">
       <button
         type="button"
-        class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+        class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="pending"
-        aria-label="Decrease quantity"
+        :aria-label="`Decrease quantity of ${item.name}`"
         @click="decrement"
       >
         −
@@ -71,9 +71,9 @@ function remove(): void {
       </span>
       <button
         type="button"
-        class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+        class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="pending"
-        aria-label="Increase quantity"
+        :aria-label="`Increase quantity of ${item.name}`"
         @click="increment"
       >
         +
@@ -89,8 +89,9 @@ function remove(): void {
 
     <button
       type="button"
-      class="text-sm font-medium text-red-600 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+      class="text-sm font-medium text-red-600 hover:text-red-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-800 disabled:cursor-not-allowed disabled:opacity-50"
       :disabled="pending"
+      :aria-label="`Remove ${item.name} from cart`"
       @click="remove"
     >
       Remove

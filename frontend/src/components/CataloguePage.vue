@@ -97,6 +97,21 @@ function goToNextPage(): void {
   void store.updateQuery({ offset: store.query.offset + store.query.limit })
 }
 
+/**
+ * A single polite live region announcing "N products found"/"no products
+ * found"/"loading" for screen-reader users, who otherwise get no signal that
+ * a filter or page change silently swapped the list below. Deliberately
+ * empty while `store.error` is set: `ErrorState` already renders with
+ * `role="alert"`, so pairing that with a second, differently-worded
+ * announcement here would just talk over it.
+ */
+const resultsAnnouncement = computed<string>(() => {
+  if (store.error) return ''
+  if (store.loading) return 'Loading products…'
+  if (store.total === 0) return 'No products found.'
+  return `${store.total} product${store.total === 1 ? '' : 's'} found.`
+})
+
 // --- URL <-> store sync -----------------------------------------------
 
 function applyRouteQuery(query: CatalogueQuery): void {
@@ -144,6 +159,13 @@ onUnmounted(() => {
       </p>
     </div>
 
+    <p
+      aria-live="polite"
+      class="sr-only"
+    >
+      {{ resultsAnnouncement }}
+    </p>
+
     <form
       class="flex flex-wrap items-end gap-4"
       @submit.prevent
@@ -158,7 +180,7 @@ onUnmounted(() => {
           v-model="nameInput"
           type="search"
           placeholder="Search by name"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900"
+          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
           @input="onNameInput"
         >
       </div>
@@ -170,7 +192,7 @@ onUnmounted(() => {
         >Category</label>
         <select
           id="catalogue-category-filter"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900"
+          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
           :value="store.query.category ?? ''"
           @change="onCategoryChange"
         >
@@ -194,7 +216,7 @@ onUnmounted(() => {
         >Sort by</label>
         <select
           id="catalogue-sort"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900"
+          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
           :value="sortValue"
           @change="onSortChange"
         >
@@ -262,7 +284,7 @@ onUnmounted(() => {
       <div class="flex items-center justify-between">
         <button
           type="button"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="!canGoPrevious"
           @click="goToPreviousPage"
         >
@@ -273,7 +295,7 @@ onUnmounted(() => {
         </span>
         <button
           type="button"
-          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="!canGoNext"
           @click="goToNextPage"
         >
