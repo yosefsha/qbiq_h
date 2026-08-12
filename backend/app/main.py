@@ -10,6 +10,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.deps import get_sql_product_repository
+from app.api.products import get_product_repository
+from app.api.products import router as products_router
 from app.health import HealthCheck
 from app.logging_config import configure_logging
 from app.middleware import REQUEST_ID_HEADER, RequestIdMiddleware
@@ -45,6 +48,9 @@ app.add_middleware(
     # correlating a client-side failure with the server log that explains it.
     expose_headers=[REQUEST_ID_HEADER],
 )
+
+app.dependency_overrides[get_product_repository] = get_sql_product_repository
+app.include_router(products_router)
 
 _health_check = HealthCheck()
 

@@ -21,7 +21,7 @@ ORIGIN = "http://localhost:5173"
 @pytest.fixture(name="client")
 def client_fixture() -> TestClient:
     """A client whose app has one route that always raises."""
-    if not any(route.path == "/boom" for route in app.routes):  # type: ignore[attr-defined]
+    if not any(getattr(route, "path", None) == "/boom" for route in app.routes):
 
         @app.get("/boom")
         def boom() -> None:
