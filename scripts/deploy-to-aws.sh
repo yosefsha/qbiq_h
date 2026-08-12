@@ -305,6 +305,7 @@ MIGRATION_FAMILY=$(stack_output "$DEPLOY_STACK" "MigrationTaskDefinitionFamily")
 MIGRATION_CONTAINER=$(stack_output "$DEPLOY_STACK" "MigrationContainerName")
 SUBNET_IDS=$(stack_output "$DEPLOY_STACK" "DeploySubnetIds")
 SECURITY_GROUP=$(stack_output "$DEPLOY_STACK" "DeploySecurityGroupId")
+ASSIGN_PUBLIC_IP=$(stack_output "$DEPLOY_STACK" "DeployAssignPublicIp")
 FRONTEND_BUCKET=$(stack_output "$DEPLOY_STACK" "FrontendBucketName")
 DISTRIBUTION_ID=$(stack_output "$DEPLOY_STACK" "CloudFrontDistributionId")
 
@@ -315,6 +316,7 @@ for pair in \
     "MigrationContainerName:${MIGRATION_CONTAINER}" \
     "DeploySubnetIds:${SUBNET_IDS}" \
     "DeploySecurityGroupId:${SECURITY_GROUP}" \
+    "DeployAssignPublicIp:${ASSIGN_PUBLIC_IP}" \
     "FrontendBucketName:${FRONTEND_BUCKET}" \
     "CloudFrontDistributionId:${DISTRIBUTION_ID}"; do
     if [ -z "${pair#*:}" ] || [ "${pair#*:}" = "None" ]; then
@@ -326,10 +328,16 @@ done
 # ---------------------------------------------------------------------------
 # [6/9] Migrate, then seed
 # ---------------------------------------------------------------------------
-# Both run as one-off Fargate tasks in the private subnets with the ECS task
-# security group, because that group is the only source the RDS ingress rule in
-# backend_stack.py admits. Nothing on this laptop can reach the database, and
-# that is by design.
+# Both run as one-off Fargate tasks in the same subnets and the same security
+# group the service's own tasks use, because that group is the only source the
+# RDS ingress rule in backend_stack.py admits. Nothing on this laptop can reach
+# the database, and that is by design.
+#
+# The subnets are public and the tasks take a public IP — read from the stack,
+# never hardcoded here. That is a consequence of removing the NAT Gateway
+# (network_stack.py): without egress a task cannot pull its image from ECR, and
+# would stop before running a single command. Inbound is still restricted to the
+# ALB security group; the public IP buys egress, not reachability.
 #
 # The migration task definition already points at `<repo>:latest`, which step 4
 # just moved to the image built from this commit — so there is no revision to
@@ -355,7 +363,7 @@ run_one_off_task() {
         --region "$AWS_REGION" \
         --started-by "deploy-script-${VERSION_TAG}" \
         --network-configuration \
-        "awsvpcConfiguration={subnets=[${SUBNET_IDS}],securityGroups=[${SECURITY_GROUP}],assignPublicIp=DISABLED}" \
+        "awsvpcConfiguration={subnets=[${SUBNET_IDS}],securityGroups=[${SECURITY_GROUP}],assignPublicIp=${ASSIGN_PUBLIC_IP}}" \
         --overrides \
         "{\"containerOverrides\":[{\"name\":\"${MIGRATION_CONTAINER}\",\"command\":${command_json}}]}" \
         --query 'tasks[0].taskArn' \

@@ -148,6 +148,36 @@ class BackendStack(Stack):
             ),
             security_groups=[self.task_security_group],
             public_load_balancer=True,
+            # Tasks run in the PUBLIC subnets with a public IP, and this is a
+            # cost decision with a security consequence that is worth stating
+            # rather than skimming.
+            #
+            # **Why.** The VPC has no NAT Gateway (~$32/month, removed — see
+            # `network_stack.py`). A Fargate task must reach ECR to pull its
+            # image, and Secrets Manager and CloudWatch Logs to start at all.
+            # With no NAT, a task in a private subnet can reach none of them and
+            # dies with an image-pull timeout, which shows up as a task that
+            # never passes its health check — the failure looks like a bug in
+            # the application. A public subnet plus a public IP gives the task
+            # egress through the internet gateway at no hourly cost.
+            #
+            # **A public IP is not public access.** `self.task_security_group`
+            # above admits inbound traffic from the load balancer's security
+            # group only, on port 8000. Nothing on the internet can open a
+            # connection to a task; the public IP is an egress mechanism, and
+            # the ALB remains the only ingress path.
+            #
+            # **The data tier does not follow.** RDS and ElastiCache stay in
+            # PRIVATE_ISOLATED subnets with no route to an internet gateway,
+            # reachable only from this security group.
+            #
+            # **Rejected alternative**, so this is not "fixed" later: interface
+            # VPC endpoints for ECR api/dkr, Secrets Manager and CloudWatch Logs
+            # would keep the tasks private, but at ~$7.20/month each that is
+            # ~$29/month against the NAT's ~$32 — the same bill with more moving
+            # parts.
+            task_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            assign_public_ip=True,
             # CLAUDE.md's rolling deployment, stated explicitly rather than
             # inherited: without these, CDK warns at synth that the 50% default
             # applies and half the tasks are drained before a replacement is

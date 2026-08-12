@@ -123,9 +123,12 @@ See [ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md) for why this
 - Migrations run from the image being deployed, never from the runner: a GitHub-hosted runner cannot reach RDS in a private subnet, and this is the only thing in the project that needed CodeBuild's VPC attachment.
 
 ### Networking
-- **VPC** with public and private subnets across 2+ AZs.
-- ALB in public subnets, ECS tasks in private subnets.
-- **NAT Gateway** for outbound internet from private subnets.
+- **VPC** with public and **private isolated** subnets across 2+ AZs.
+- **No NAT Gateway.** It was ~$32/month before any data passed through it — the largest single line item in a demo environment — so it was removed, and with it the `PRIVATE_WITH_EGRESS` subnets.
+- ALB **and ECS tasks** in the public subnets; tasks carry a public IP (`assign_public_ip=True`). That is how they reach ECR, Secrets Manager and CloudWatch Logs at task start without a NAT. **A public IP is not public access**: the task security group admits inbound from the ALB security group on port 8000 and nothing else, so the ALB is still the only ingress path.
+- RDS and ElastiCache stay in the **private isolated** subnets — no route to an internet gateway at all — reachable only from the ECS task security group.
+- Rejected alternative, so it is not "fixed" later: interface VPC endpoints for ECR (api + dkr), Secrets Manager and CloudWatch Logs cost ~$7.20/month each, so four is ~$29/month against the NAT's ~$32 — the same bill with more moving parts.
+- **What this costs:** the RDS secret's managed rotation Lambda needs egress to the Secrets Manager API and no longer has any, so automatic rotation is removed and rotation is manual. See `data_stack.py` and `docs/runbook.md`.
 - Security groups: ALB allows inbound 443 only; ECS tasks allow inbound from ALB security group on port 8000 only.
 
 ### Monitoring & Observability

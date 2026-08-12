@@ -285,6 +285,14 @@ Two things worth knowing before reading the script:
 - **The image is built `--platform linux/amd64`, and that is not optional.** Fargate here
   is x86_64; an image built natively on Apple Silicon runs fine locally and dies in ECS
   with `exec format error`.
+- **There is no NAT Gateway, and staging runs one task.** ~$38/month cheaper, and both
+  choices cost something real: the ECS tasks run in public subnets with public IPs (the
+  only way to reach ECR without a NAT), automatic rotation of the RDS secret is gone with
+  the egress it needed, and one task means no AZ redundancy in staging. A public IP is
+  **not** public access — the task security group still admits inbound from the ALB alone,
+  and RDS and Redis are in isolated subnets with no route to the internet. The full
+  trade-off table, and how to reverse any of it, is in
+  [docs/runbook.md](docs/runbook.md).
 
 `cdk synth` succeeds offline today. **Nothing has ever been deployed and the script has
 never been run**, and several things must be replaced or configured before it can work at

@@ -256,6 +256,55 @@ absent.
 
 ---
 
+## What staging costs, and the three things that were traded for it
+
+Staging is a demo environment, and it is shaped for cost rather than for resilience.
+Three choices, each with a real consequence, so none of them is later "fixed" by someone
+who only sees the downside:
+
+| Choice | Saves | Consequence |
+|---|---|---|
+| **No NAT Gateway** (`nat_gateways=0`) | ~$32.85/mo | ECS tasks must run in **public subnets with public IPs** to reach ECR, Secrets Manager and CloudWatch Logs. Automatic rotation of the RDS secret is gone (see "Rotation is manual" below). |
+| **One Fargate task** in staging (was two) | ~$9/mo | No AZ redundancy — the single task is in one AZ, and losing that AZ takes staging down until ECS reschedules. Rolling deploys still work. |
+| Public IPv4 on that task | **costs** ~$3.65/mo | AWS bills $0.005/hr per in-use public IPv4 address. This is the part of the NAT saving that is given back. |
+
+Net: **roughly $38/month less** for staging, before NAT data-processing charges (which
+were $0.045/GB on top of the hourly rate and are now zero). Production keeps two tasks and
+is otherwise unchanged, but it shares the network stack, so it too has no NAT Gateway and
+its tasks are also in public subnets.
+
+**What was rejected, and why.** Interface VPC endpoints for ECR (api and dkr), Secrets
+Manager and CloudWatch Logs would let the tasks stay in private subnets. At ~$7.20/month
+each, four of them is ~$29/month against the NAT's ~$32 — the same bill with more moving
+parts, so this is not a saving. If the tasks must be private, restore the NAT Gateway
+rather than building an endpoint mesh.
+
+**A public IP is not public access.** The task security group admits inbound traffic from
+the ALB security group on port 8000 and from nothing else, so the ALB remains the only
+ingress path. The public IP exists so the task can make outbound calls. RDS and
+ElastiCache did not move: they are in `PRIVATE_ISOLATED` subnets with no route to an
+internet gateway at all, which is strictly stronger than the `PRIVATE_WITH_EGRESS`
+subnets they were in before.
+
+**Turning any of it back on:**
+
+```python
+# infra/stacks/network_stack.py
+nat_gateways=1,
+subnet_configuration=[..., ec2.SubnetConfiguration(
+    name="Private", subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS, cidr_mask=24)],
+
+# infra/stacks/backend_stack.py — drop task_subnets and assign_public_ip
+# infra/stacks/deploy_stack.py — task_subnets back to PRIVATE_WITH_EGRESS,
+#                                DeployAssignPublicIp back to "DISABLED"
+# infra/config/staging.py      — backend_desired_count / backend_min_tasks back to 2
+```
+
+Nothing reads `DeployAssignPublicIp` as a literal — both `deploy.yml` and
+`scripts/deploy-to-aws.sh` take it from the stack output — so flipping it is one edit.
+
+---
+
 ## Standing an environment up: `scripts/deploy-to-aws.sh`
 
 There are two different jobs here, and they are not the same tool.
@@ -295,8 +344,10 @@ Nine steps, and each one is a thing that would otherwise be a line in this runbo
    and `<env>-deploy`, with `--require-approval never`. Expect 15-25 minutes; the banner
    says so, because a silent RDS create looks exactly like a hang.
 6. **Migrate, then seed**, each as a one-off Fargate task on the `<service>-<env>-migrate`
-   task definition, in the private subnets with the ECS task security group — the only
-   source the RDS ingress rule admits. Both are idempotent.
+   task definition, in the same subnets and the same security group the service's tasks
+   use — that group is the only source the RDS ingress rule admits. The subnets are public
+   and the task takes a public IP, read from `DeployAssignPublicIp` rather than hardcoded;
+   without it the task cannot pull from ECR at all. Both commands are idempotent.
 7. **Build and upload the SPA**: `npm ci && npm run build`, `aws s3 sync dist/ --delete`,
    then a CloudFront invalidation on `/*` that it waits for.
 8. **Force a new ECS deployment** so the service picks up the pushed `latest`, and wait
@@ -433,7 +484,27 @@ at synth time — the password does not exist until CloudFormation generates it 
 - `DB_HOST` set with any of `DB_NAME` / `DB_USERNAME` / `DB_PASSWORD` missing raises at
   import and the task dies loudly, rather than falling back to `localhost`.
 
-**Rotation (not yet executable — nothing has been deployed):** rotating a value in
+### Rotation is manual, and that is a consequence of removing the NAT Gateway
+
+**Neither secret rotates automatically.** The database secret used to: `data_stack.py`
+called `add_rotation_single_user` with a 30-day schedule. That was removed when the NAT
+Gateway was, because Secrets Manager's managed rotation runs as a Lambda inside the VPC
+and has to call the Secrets Manager API to finish the rotation. With no NAT there is no
+route to that API, and a Lambda in a VPC never gets a public IP of its own — so the
+public-subnet arrangement the ECS tasks use has no equivalent here. Left configured it
+would not have failed at deploy; it would have failed every 30 days, quietly, marking the
+secret rotation-failed where nobody was looking.
+
+Restoring it costs **one Secrets Manager interface VPC endpoint (~$7.20/month)** and one
+argument: pass `endpoint=` to `add_rotation_single_user`. That trade is recorded in the
+`AwsSolutions-SMG4` suppression on the secret, so it stays a decision rather than an
+omission.
+
+The Redis AUTH token never rotated and is the harder of the two: AWS publishes no managed
+rotation function for one, because changing it is a two-phase `ModifyReplicationGroup`
+against the cluster rather than a write to a datastore. That needs a custom Lambda.
+
+**Rotating by hand (not yet executable — nothing has been deployed):** rotating a value in
 Secrets Manager does not restart running tasks, because ECS resolves secrets at task
 start. The rotation is therefore two steps — change the secret, then force a new
 deployment so tasks pick it up:
