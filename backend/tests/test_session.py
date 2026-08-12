@@ -27,7 +27,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from redis.asyncio import Redis
 
-from app.session import SessionId, SessionStore, get_session
+from app.session import SessionId, SessionStore
 from app.settings import Settings
 
 # docker-compose.yml publishes Redis on `${REDIS_PORT:-6379}`. No .env file
@@ -45,7 +45,9 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _test_settings(*, cookie_secure: bool = False, session_ttl_seconds: int = 1800) -> Settings:
+def _test_settings(
+    *, cookie_secure: bool = False, session_ttl_seconds: int = 1800
+) -> Settings:
     """Builds a `Settings` instance for a single test, independent of env vars."""
     return Settings(
         database_url="postgresql://unused/unused",
@@ -282,7 +284,11 @@ def test_ttl_is_refreshed_on_every_access() -> None:
             await store.touch(session_id)
             ttl_after_second_touch = await redis_client.ttl(session_id.redis_key)
 
-            return ttl_after_first_touch, ttl_before_second_touch, ttl_after_second_touch
+            return (
+                ttl_after_first_touch,
+                ttl_before_second_touch,
+                ttl_after_second_touch,
+            )
         finally:
             await redis_client.delete(session_id.redis_key)
             await redis_client.aclose()

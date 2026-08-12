@@ -51,7 +51,9 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         name="Deep Work: Rules for Focused Success",
         price_minor=1499,
         currency="USD",
-        short_description="A practical guide to cultivating deep, distraction-free focus.",
+        short_description=(
+            "A practical guide to cultivating deep, distraction-free focus."
+        ),
         long_description=(
             "Deep Work lays out a framework for training your ability to "
             "focus without distraction on cognitively demanding tasks. "
@@ -61,15 +63,21 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/deep-work.jpg",
         category_slug="e-books",
         reviews=(
-            ReviewSeed("Priya N.", 5, "Changed how I structure my mornings. Read it twice."),
-            ReviewSeed("Marcus T.", 4, "Dense in places but the core argument is worth it."),
+            ReviewSeed(
+                "Priya N.", 5, "Changed how I structure my mornings. Read it twice."
+            ),
+            ReviewSeed(
+                "Marcus T.", 4, "Dense in places but the core argument is worth it."
+            ),
         ),
     ),
     ProductSeed(
         name="Clean Architecture: A Craftsman's Guide",
         price_minor=2999,
         currency="USD",
-        short_description="Software structure and design principles for maintainable systems.",
+        short_description=(
+            "Software structure and design principles for maintainable systems."
+        ),
         long_description=(
             "A guide to the architectural principles behind long-lived, "
             "testable software: boundaries, dependency rules, and the "
@@ -79,9 +87,13 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/clean-architecture.jpg",
         category_slug="e-books",
         reviews=(
-            ReviewSeed("Dana K.", 5, "Reference-quality. I keep coming back to chapter 22."),
+            ReviewSeed(
+                "Dana K.", 5, "Reference-quality. I keep coming back to chapter 22."
+            ),
             ReviewSeed("Owen R.", 4, "Some examples feel dated but the ideas hold up."),
-            ReviewSeed("Yuki S.", 5, "Best explanation of the dependency rule I've read."),
+            ReviewSeed(
+                "Yuki S.", 5, "Best explanation of the dependency rule I've read."
+            ),
         ),
     ),
     ProductSeed(
@@ -98,14 +110,18 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/pragmatic-programmer.jpg",
         category_slug="e-books",
         reviews=(
-            ReviewSeed("Leah B.", 5, "Every developer should read this early in their career."),
+            ReviewSeed(
+                "Leah B.", 5, "Every developer should read this early in their career."
+            ),
         ),
     ),
     ProductSeed(
         name="Atomic Habits",
         price_minor=1299,
         currency="USD",
-        short_description="An easy and proven way to build good habits and break bad ones.",
+        short_description=(
+            "An easy and proven way to build good habits and break bad ones."
+        ),
         long_description=(
             "A practical framework for improving daily habits, built "
             "around the four laws of behaviour change. Delivered as EPUB, "
@@ -133,8 +149,14 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/pixelforge-studio.jpg",
         category_slug="software-licences",
         reviews=(
-            ReviewSeed("Ines M.", 5, "Genuinely rivals the big-name editors at a third of the price."),
-            ReviewSeed("Carlos D.", 4, "Great value; the plugin ecosystem is still growing."),
+            ReviewSeed(
+                "Ines M.",
+                5,
+                "Genuinely rivals the big-name editors at a third of the price.",
+            ),
+            ReviewSeed(
+                "Carlos D.", 4, "Great value; the plugin ecosystem is still growing."
+            ),
         ),
     ),
     ProductSeed(
@@ -151,8 +173,12 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/taskflow-pro.jpg",
         category_slug="software-licences",
         reviews=(
-            ReviewSeed("Wendy A.", 5, "Paid once two years ago, still gets free updates."),
-            ReviewSeed("Sam O.", 4, "Solid, though the mobile app lags behind desktop."),
+            ReviewSeed(
+                "Wendy A.", 5, "Paid once two years ago, still gets free updates."
+            ),
+            ReviewSeed(
+                "Sam O.", 4, "Solid, though the mobile app lags behind desktop."
+            ),
         ),
     ),
     ProductSeed(
@@ -169,7 +195,11 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/securevault.jpg",
         category_slug="software-licences",
         reviews=(
-            ReviewSeed("Hana J.", 5, "Migration from my old manager took ten minutes, flawless since."),
+            ReviewSeed(
+                "Hana J.",
+                5,
+                "Migration from my old manager took ten minutes, flawless since.",
+            ),
         ),
     ),
     ProductSeed(
@@ -185,8 +215,14 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/codesight.jpg",
         category_slug="software-licences",
         reviews=(
-            ReviewSeed("Petra L.", 4, "Caught real bugs in week one. CI plugin setup was fiddly."),
-            ReviewSeed("Amir F.", 5, "Dashboard makes triaging findings across repos painless."),
+            ReviewSeed(
+                "Petra L.",
+                4,
+                "Caught real bugs in week one. CI plugin setup was fiddly.",
+            ),
+            ReviewSeed(
+                "Amir F.", 5, "Dashboard makes triaging findings across repos painless."
+            ),
         ),
     ),
     # --- Online Courses -------------------------------------------------
@@ -204,7 +240,9 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/backend-fastapi-course.jpg",
         category_slug="online-courses",
         reviews=(
-            ReviewSeed("Noor H.", 5, "The migrations module alone was worth the price."),
+            ReviewSeed(
+                "Noor H.", 5, "The migrations module alone was worth the price."
+            ),
             ReviewSeed("Ben C.", 5, "Clear pacing, real projects, no filler."),
         ),
     ),
@@ -222,8 +260,12 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/vue3-typescript-course.jpg",
         category_slug="online-courses",
         reviews=(
-            ReviewSeed("Elif K.", 4, "Great structure; wish there were more on testing."),
-            ReviewSeed("Diego R.", 5, "Finally a course that treats TypeScript as first-class."),
+            ReviewSeed(
+                "Elif K.", 4, "Great structure; wish there were more on testing."
+            ),
+            ReviewSeed(
+                "Diego R.", 5, "Finally a course that treats TypeScript as first-class."
+            ),
         ),
     ),
     ProductSeed(
@@ -239,7 +281,9 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/aws-cdk-course.jpg",
         category_slug="online-courses",
         reviews=(
-            ReviewSeed("Fatima Z.", 5, "Took this straight into a real project the same week."),
+            ReviewSeed(
+                "Fatima Z.", 5, "Took this straight into a real project the same week."
+            ),
         ),
     ),
     ProductSeed(
@@ -256,8 +300,12 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
         thumbnail_url="https://cdn.qbiq.dev/products/sql-for-developers-course.jpg",
         category_slug="online-courses",
         reviews=(
-            ReviewSeed("Ravi S.", 4, "The indexing chapter changed how I write queries."),
-            ReviewSeed("Claire M.", 5, "Best SQL course I've taken, and I've taken a few."),
+            ReviewSeed(
+                "Ravi S.", 4, "The indexing chapter changed how I write queries."
+            ),
+            ReviewSeed(
+                "Claire M.", 5, "Best SQL course I've taken, and I've taken a few."
+            ),
         ),
     ),
 )
@@ -278,8 +326,7 @@ class CatalogueSeeder:
     def _seed_categories(self) -> dict[str, Category]:
         """Inserts any category from `CATEGORY_SEEDS` missing by `slug`."""
         existing = {
-            category.slug: category
-            for category in self._session.query(Category).all()
+            category.slug: category for category in self._session.query(Category).all()
         }
         for seed in CATEGORY_SEEDS:
             if seed.slug in existing:
