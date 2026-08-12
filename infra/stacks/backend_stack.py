@@ -269,6 +269,28 @@ class BackendStack(Stack):
         """
         protocol = str(env_config.get("alb_listener_protocol", "HTTP")).upper()
         if protocol == "HTTP":
+            # Production on plaintext is refused — but only once the environment
+            # is otherwise real. `custom_domain_enabled` is the switch that says
+            # "this environment has a delegated zone and a certificate can be
+            # issued", so it is the exact point at which staying on HTTP stops
+            # being a placeholder and becomes a decision to carry the session
+            # cookie across the CloudFront->ALB hop in clear (ADR-001).
+            #
+            # Guarding on that rather than on `environment == "prod"` alone
+            # keeps `cdk synth -c env=prod` working today, while making the
+            # combination that would actually ship plaintext impossible to
+            # reach by omission. A comment saying "production must not deploy on
+            # HTTP" does not stop anyone; this does.
+            if env_config.get("environment") == "prod" and env_config.get(
+                "custom_domain_enabled"
+            ):
+                raise ValueError(
+                    "alb_listener_protocol is 'HTTP' for production with "
+                    "custom_domain_enabled=True. That combination puts the "
+                    "session cookie on the wire in clear between CloudFront and "
+                    "the ALB. Set alb_listener_protocol='HTTPS' and "
+                    "alb_certificate_arn — see docs/runbook.md."
+                )
             return {}
         if protocol != "HTTPS":
             raise ValueError(

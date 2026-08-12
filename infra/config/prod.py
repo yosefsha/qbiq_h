@@ -41,8 +41,12 @@ PROD_CONFIG = {
     # why this is a single setting rather than one on each side.
     # "HTTPS" switches the listener to 443 (plus an HTTP:80 listener that only
     # redirects) and requires `alb_certificate_arn` below. Production must not
-    # be deployed on "HTTP": the session cookie would cross the public internet
-    # between CloudFront and the ALB in clear.
+    # be deployed on "HTTP": the session cookie would cross the CloudFront->ALB
+    # hop in clear. That is enforced, not merely asserted — `backend_stack.py`
+    # refuses to synthesize production on HTTP once `custom_domain_enabled` is
+    # True, which is the point at which a certificate can actually be issued.
+    # It stays "HTTP" here only because this environment has no delegated zone
+    # yet, and so cannot have a certificate either.
     "alb_listener_protocol": "HTTP",
     # The ACM certificate the HTTPS listener presents. Empty because
     # `domain_name` above is a placeholder and a certificate cannot be issued
