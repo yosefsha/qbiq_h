@@ -59,7 +59,7 @@ mechanisms, not one.
 
 ## The same shape locally
 
-`docker compose --profile prod-like up` reproduces it with nginx standing in for
+`docker compose up` reproduces it with nginx standing in for
 CloudFront:
 
 ```mermaid
@@ -143,17 +143,25 @@ infra/
 The upper diagram is the target. What `cdk synth` currently produces differs, and the
 differences are real:
 
-- **There is no `/api/*` behavior on the CloudFront distribution.**
-  `infra/stacks/frontend_stack.py` defines the default behavior and `/assets/*` only,
-  both pointing at S3. Nothing routes `/api` to the ALB, so as deployed today the SPA
-  would fetch `/api/products` from S3 and fail. The single-origin property the whole
-  cookie design rests on exists locally (nginx) and on paper, not in the CDK.
 - **There is no data stack**, so no RDS or ElastiCache is created and the ECS task
   definition sets no `DATABASE_URL` or `REDIS_URL` — the container would fall back to its
   `localhost` defaults. `/health` would still answer `200`, because it touches neither
   store.
 - **The ALB listener is HTTP on port 80**, not HTTPS on 443, pending an ACM certificate
-  and a real domain.
+  and a real domain. The CloudFront `/api/*` behavior follows it over plain HTTP
+  (`alb_listener_protocol` in `infra/config/`), so the CloudFront → ALB hop crosses the
+  AWS network without TLS and the session cookie rides it in the clear.
+- **There is no custom domain.** `custom_domain_enabled` is `False`, so no ACM
+  certificate and no Route 53 alias are created and the distribution serves on its
+  generated `*.cloudfront.net` name. The single-origin property is unaffected — one
+  CloudFront host still serves both the SPA and `/api/*` — but the host is not the
+  branded one.
+
+The `/api/*` behavior itself **is** implemented (INF-06): it routes to the ALB with
+`CachingDisabled` + `AllViewer`, so cookies and query strings reach the API, and it
+allows the write methods the Cart needs. The SPA-routing rewrite is a CloudFront Function
+scoped to the S3 behaviors rather than a distribution-wide `error_responses` entry,
+precisely so an API `404` stays an API `404` instead of coming back as the SPA shell.
 
 See [the runbook](runbook.md) for the full state-of-play and what has to change before a
 deploy can succeed.

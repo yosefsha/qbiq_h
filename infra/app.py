@@ -46,7 +46,21 @@ backend = BackendStack(
     data_client_targets=data.client_targets,
 )
 
-frontend = FrontendStack(app, f"{target_env}-frontend", env=aws_env, env_config=env_config)
+# Same one-way rule again: frontend -> backend. The frontend stack needs the
+# ALB behind the CloudFront `/api/*` behavior, which is what keeps the SPA and
+# the API on one origin (ADR-001). It reads the load balancer's DNS name and
+# nothing in the backend stack refers to the frontend, so the reference is a
+# plain cross-stack export. Passing anything the other way — a distribution
+# domain into the backend's ALLOWED_ORIGINS, say — would close the loop into the
+# `DependencyCycle` the network stack's comment describes; the same-origin design
+# is exactly what makes that unnecessary.
+frontend = FrontendStack(
+    app,
+    f"{target_env}-frontend",
+    env=aws_env,
+    env_config=env_config,
+    load_balancer=backend.service.load_balancer,
+)
 
 # The pipeline holds direct references to this environment's ECS service, S3
 # bucket and CloudFront distribution, so it is environment-scoped and must carry

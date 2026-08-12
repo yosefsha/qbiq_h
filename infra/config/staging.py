@@ -3,10 +3,12 @@
 # not a recommendation.
 #
 # STILL A PLACEHOLDER — `domain_name` / `frontend_domain`. No `example.com`
-# hosted zone exists in this account, so the lookup in frontend_stack.py is
-# answered by a fake seeded entry in `cdk.json`. Synthesis succeeds; a real
-# deploy would not. Set a real domain and delete the seeded `hosted-zone:` key
-# before deploying (INF-06).
+# hosted zone exists in this account, which is why `custom_domain_enabled` is
+# False: frontend_stack.py then skips the hosted-zone lookup, the ACM
+# certificate and the Route 53 alias entirely, and the distribution serves on
+# its generated `*.cloudfront.net` name. That is deployable today. Set a real
+# delegated domain here, flip the flag, and the certificate and alias appear —
+# see docs/runbook.md for what stays manual.
 STAGING_CONFIG = {
     "environment": "staging",
     "account": "963352896991",
@@ -15,6 +17,7 @@ STAGING_CONFIG = {
     "owner": "platform-team",
     "domain_name": "example.com",
     "frontend_domain": "staging.example.com",
+    "custom_domain_enabled": False,
     # Two tasks, not one, in staging as well as production. CLAUDE.md states
     # min 2 / max 10 without an environment qualifier, and a single task makes
     # the two properties this environment exists to rehearse untestable: it

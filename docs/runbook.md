@@ -42,6 +42,12 @@ properties, a stale RDS instance-class validator entry) but no errors.
 Five stacks per environment, deploy order following their dependencies:
 `<env>-network` → `<env>-data` → `<env>-backend` → `<env>-frontend` → `<env>-pipeline`.
 
+That order is not a preference. `<env>-frontend` reads the backend's load balancer DNS
+name for the CloudFront `/api/*` behavior, so it cannot be deployed before
+`<env>-backend` exists. Every reference in the app runs one way — network → data →
+backend → frontend, with the pipeline last — because a reference pointing back the other
+way is a `DependencyCycle` that fails at synth.
+
 ---
 
 ## Before any `cdk deploy` can work
@@ -66,18 +72,46 @@ context lookups are **seeded by hand in `cdk.json`** rather than resolved live:
 "availability-zones:account=963352896991:region=us-east-1": ["us-east-1a", "us-east-1b"]
 ```
 
-That is what makes offline synthesis work and what makes a deploy fail: CloudFormation
-would be handed a hosted zone id of `ZZZZZZZZZZZZZZZZZZZZ`. AZ names also map to
-different physical zones per account, so the seeded AZs are a placeholder too. Delete
-both seeded keys and re-synth from a session that can assume the CDK lookup role in the
-target account.
+The seeded AZs are what makes offline synthesis work, and they are a placeholder: AZ
+names map to different physical zones per account. Delete that key and re-synth from a
+session that can assume the CDK lookup role in the target account.
 
-### 2. A real domain
+The seeded **hosted zone is not read at all today** — `custom_domain_enabled` is `False`
+in both configs, so `frontend_stack.py` never calls `HostedZone.from_lookup`. The seed is
+kept only so that flipping the flag still synthesizes offline; the id
+`ZZZZZZZZZZZZZZZZZZZZ` is fake and must be deleted before a deploy with a real domain.
+
+### 2. A real domain (optional — the distribution deploys without one)
 
 `domain_name` is `example.com` and `frontend_domain` is `staging.example.com` /
-`app.example.com` — placeholders. `frontend_stack.py` looks the zone up and requests a
-DNS-validated ACM certificate against it, so a real, delegated hosted zone has to exist
-first (INF-06).
+`app.example.com` — placeholders, and `custom_domain_enabled` is `False`. With the flag
+off, `frontend_stack.py` creates **no hosted-zone lookup, no ACM certificate and no
+Route 53 alias**, and the distribution serves on its generated `*.cloudfront.net` name.
+That is deliberate: a DNS-validated certificate against a zone that does not exist
+synthesizes cleanly and can never deploy, so the certificate is absent rather than
+fabricated. The cost of the flag being off is one suppressed cdk-nag finding —
+`AwsSolutions-CFR4`, because the default CloudFront certificate pins viewer TLS to
+TLSv1 and cannot be given a stronger security policy.
+
+Turning it on, and what stays manual:
+
+1. **Register or delegate a real domain** and create its public hosted zone in Route 53.
+   Neither is done by this CDK app; delegation means updating the NS records at the
+   registrar, which is outside AWS entirely.
+2. Set `domain_name` to the zone apex and `frontend_domain` to the host the SPA serves
+   on, in `infra/config/staging.py` and `infra/config/prod.py`, and set
+   `custom_domain_enabled` to `True`.
+3. Delete the seeded `hosted-zone:` key from `cdk.json` and re-synth from a session that
+   can assume the CDK lookup role, so the real zone id is resolved.
+4. `cdk deploy <env>-frontend`. **The certificate stack will sit in `CREATE_IN_PROGRESS`
+   until DNS validation completes.** CDK writes the validation CNAME into the hosted zone
+   for you, so this resolves itself if the zone really is delegated — and hangs for hours
+   if it is not. That wait is the usual sign that step 1 was not actually finished.
+
+The certificate is requested in this stack, which is in `us-east-1` in both configs;
+CloudFront only reads viewer certificates from that region. `frontend_stack.py` raises at
+synth if `custom_domain_enabled` is set in any other region rather than letting the
+deploy discover it.
 
 ### 3. An ACM certificate for the ALB
 
@@ -113,6 +147,19 @@ Three things to know before flipping it:
 - Even on HTTPS the ALB is **not literally "443 only"**: port 80 stays open for the
   redirect listener. Drop `redirect_http` from `_listener_configuration` if that
   literal reading matters more than a redirect for anyone who types `http://`.
+
+**Two things have to move together.** `alb_listener_protocol` in `infra/config/*.py` is
+what CloudFront uses to reach the ALB on the `/api/*` behavior. It is `"HTTP"` today. If
+the listener becomes HTTPS and this is not flipped with it — or the reverse — the edge
+returns `502` and nothing in the application logs explains why, because the request never
+reaches a container. Flipping it to `"HTTPS"` also removes the `AwsSolutions-CFR5`
+suppression automatically: `frontend_stack.py` only adds that suppression on the HTTP
+branch.
+
+One subtlety for whoever does that work: the `/api/*` behavior forwards the viewer's
+`Host` header (`ALL_VIEWER`), and CloudFront uses that name for SNI to the origin. The
+ALB's certificate therefore has to cover the **public** host — `frontend_domain` — not
+the `*.elb.amazonaws.com` name.
 
 ### 4. CodeStar Connections — a manual, console-only step
 
