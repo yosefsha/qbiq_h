@@ -53,11 +53,18 @@ jobs:
           # depth-1 clone cannot reach.
           fetch-depth: 0
 
+      # No `continue-on-error` here, deliberately. It was set once, on the
+      # reasoning that a rate-limited review should not block a merge — and the
+      # first real run proved that wrong: the token was rejected with
+      # "401 OAuth access token is invalid", the action exited 1, and the job
+      # still reported success. A review that authenticated with nothing and
+      # posted nothing looked exactly like a clean review.
+      #
+      # This job posts comments and cannot change merge status on its own, so
+      # letting it fail costs nothing except a visible red X — which is the
+      # entire point. Failing loudly is what distinguishes "no findings" from
+      # "never ran".
       - uses: anthropics/claude-code-action@v1
-        # Advisory, never a merge gate: a rate-limited or failed review must not
-        # be indistinguishable from "this code has a problem". Note this covers
-        # runtime failure only — missing configuration still fails hard above.
-        continue-on-error: true
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
