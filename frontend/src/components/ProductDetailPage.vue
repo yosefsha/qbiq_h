@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router'
 
 import { apiClient } from '../api/client'
 import { useAsyncRequest } from '../composables/useAsyncRequest'
-import { formatPriceMinor } from '../money'
+import { formatMoney } from '../money'
 import { useCartStore } from '../stores/cart'
 import type { ApiError, ProductDetail } from '../types'
 import ErrorState from './ErrorState.vue'
@@ -51,7 +51,7 @@ watch(
 )
 
 const formattedPrice = computed(() =>
-  product.value ? formatPriceMinor(product.value.priceMinor, product.value.currency) : '',
+  product.value ? formatMoney(product.value.priceMinor, product.value.currency) : '',
 )
 
 function onQuantityChange(): void {
