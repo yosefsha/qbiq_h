@@ -22,6 +22,15 @@ const props = defineProps<Props>()
 const router = useRouter()
 const cartStore = useCartStore()
 
+/**
+ * Whether *this* product's Add to Cart is in flight.
+ *
+ * Read per product rather than from a single store-wide flag: the cart store
+ * tracks pending state keyed by `productId`, so a quantity change happening on
+ * the cart page cannot disable this button, and vice versa.
+ */
+const isAdding = computed(() => cartStore.itemPending[props.id] === true)
+
 const {
   status,
   data: product,
@@ -166,10 +175,10 @@ function goToProducts(): void {
               type="button"
               data-testid="add-to-cart-button"
               class="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="cartStore.pending"
+              :disabled="isAdding"
               @click="onAddToCart"
             >
-              {{ cartStore.pending ? 'Adding…' : 'Add to Cart' }}
+              {{ isAdding ? 'Adding…' : 'Add to Cart' }}
             </button>
           </div>
 
