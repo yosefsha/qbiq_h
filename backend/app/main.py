@@ -10,9 +10,10 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.cart import router as cart_router
 from app.api.deps import get_sql_product_repository
-from app.api.products import get_product_repository
 from app.api.products import router as products_router
+from app.api.providers import get_product_repository
 from app.health import HealthCheck
 from app.logging_config import configure_logging
 from app.middleware import REQUEST_ID_HEADER, RequestIdMiddleware
@@ -49,8 +50,14 @@ app.add_middleware(
     expose_headers=[REQUEST_ID_HEADER],
 )
 
+# One override, deliberately: both routers depend on the same
+# `app.api.providers.get_product_repository` key, so the catalogue and the Cart
+# are guaranteed to resolve a product id through the same repository. Bound
+# here rather than inside either router module so neither imports SQLAlchemy.
 app.dependency_overrides[get_product_repository] = get_sql_product_repository
+
 app.include_router(products_router)
+app.include_router(cart_router)
 
 _health_check = HealthCheck()
 

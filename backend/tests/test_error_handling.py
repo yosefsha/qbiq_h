@@ -21,6 +21,11 @@ ORIGIN = "http://localhost:5173"
 @pytest.fixture(name="client")
 def client_fixture() -> TestClient:
     """A client whose app has one route that always raises."""
+    # `getattr(..., "path", None)`, not `route.path` directly: BE-07 adds a
+    # second router to `app` via `include_router`, and this FastAPI version
+    # represents an included router in `app.routes` as an internal
+    # `_IncludedRouter` wrapper with no `.path` attribute of its own, rather
+    # than the individual `APIRoute`s it contains.
     if not any(getattr(route, "path", None) == "/boom" for route in app.routes):
 
         @app.get("/boom")
