@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.providers import get_product_repository
 from app.domain.catalog import MAX_PAGE_SIZE, SortDirection, SortKey
 from app.domain.errors import UnknownSortKeyError
 from app.domain.repositories import ProductRepository
@@ -26,20 +27,6 @@ from app.models import CategoryResponse, ProductDetailResponse, ProductListRespo
 from app.products import ProductCatalog, UnknownCategoryError
 
 router = APIRouter(prefix="/api", tags=["products"])
-
-
-def get_product_repository() -> ProductRepository:
-    """Placeholder dependency, always overridden before it can be called.
-
-    `app.main` overrides this key with `app.api.deps.get_sql_product_repository`
-    at application startup; tests override it directly via
-    `app.dependency_overrides` with an `InMemoryRepository`. Reaching this
-    body means neither happened, which is a wiring bug rather than a
-    condition to degrade gracefully from.
-    """
-    raise NotImplementedError(
-        "get_product_repository must be overridden via app.dependency_overrides"
-    )
 
 
 @router.get("/products", response_model=ProductListResponse)
