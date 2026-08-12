@@ -1,0 +1,109 @@
+name: qbiq-h
+
+# Two profiles:
+#   --profile prod-like  nginx serves the built SPA and path-routes /api to the
+#                        API, so both share one origin. This is the profile that
+#                        exercises the SameSite=Lax session cookie (ADR-001)
+#                        before it ever reaches CloudFront.
+#   --profile dev        Vite dev server with HMR, proxying /api to the API.
+#
+# postgres, redis and api carry no profile, so they come up under either.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qbiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qbiq}
+      POSTGRES_DB: ${POSTGRES_DB:-qbiq_h}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qbiq} -d ${POSTGRES_DB:-qbiq_h}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    # noeviction locally, deliberately: every key we write carries a TTL, so an
+    # LRU policy could evict Carts and Sessions alongside cache entries. The
+    # production equivalent of this choice is the open question in ADR-003.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-qbiq}:${POSTGRES_PASSWORD:-qbiq}@postgres:5432/${POSTGRES_DB:-qbiq_h}
+      REDIS_URL: redis://redis:6379/0
+      # Plain HTTP locally, so a Secure cookie would be dropped silently.
+      COOKIE_SECURE: "false"
+      # Explicit list: allow_credentials=True forbids a wildcard (ADR-001).
+      # Both the bare and port-qualified forms are listed because a browser
+      # omits the port from Origin when it is the scheme default, so
+      # "http://localhost:80" would never match a real request.
+      ALLOWED_ORIGINS: "http://localhost,http://localhost:${WEB_PORT:-80},http://localhost:${VITE_PORT:-5173}"
+      CACHE_TTL_SECONDS: "300"
+      SESSION_TTL_SECONDS: "1800"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  web:
+    profiles: ["prod-like"]
+    build:
+      context: ./frontend
+    ports:
+      - "${WEB_PORT:-80}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web-dev:
+    profiles: ["dev"]
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_BASE_URL: /api
+      # Vite proxies /api to the API container rather than the host.
+      VITE_DEV_PROXY_TARGET: http://api:8000
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume so the container's node_modules is not shadowed by the
+      # host's, which may hold darwin-specific binaries.
+      - /app/node_modules
+    ports:
+      - "${VITE_PORT:-5173}:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
