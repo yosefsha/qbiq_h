@@ -264,9 +264,14 @@ cdk synth -c env=staging     # or -c env=prod
 ```
 
 `cdk synth` succeeds offline today. **Nothing has ever been deployed**, and several
-things must be replaced before `cdk deploy` can work at all — the fake hosted zone, the
-CodeStar connection, an empty ECR. The full list, plus secrets rotation and log reading:
-**[docs/runbook.md](docs/runbook.md)**.
+things must be replaced or configured before `cdk deploy` can work at all — the fake
+hosted zone, an empty ECR, and the GitHub-side settings the deploy role depends on. The
+full list, plus secrets rotation and log reading: **[docs/runbook.md](docs/runbook.md)**.
+
+Deploys themselves run from [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
+on merge to `main`, assuming an AWS role through GitHub's OIDC provider — there is no
+CodePipeline and no stored AWS credential. Why, and what that costs, is in
+[ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md). It has never run.
 
 ---
 

@@ -5,9 +5,10 @@ done by hand.
 
 > ## Read this first: nothing has ever been deployed
 >
-> `cdk synth` succeeds for both environments — that is the whole of what has been
-> verified. No `cdk deploy` has been run, no AWS resource has been created, and no
-> pipeline has executed. Every command in the "Deploying" section below **will fail
+> `cdk synth` succeeds for both environments and `actionlint` passes on the workflows —
+> that is the whole of what has been verified. No `cdk deploy` has been run, no AWS
+> resource has been created, and `.github/workflows/deploy.yml` has never executed
+> against an account. Every command in the "Deploying" section below **will fail
 > today** until the prerequisites listed there are satisfied. Sections that describe
 > operating a live system (secrets rotation, reading logs) are written from the stack
 > definitions and are marked as unexecuted.
@@ -22,7 +23,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 cdk synth -c env=staging     # or -c env=prod
-cdk list -c env=staging      # staging-network, staging-data, staging-backend, staging-frontend, staging-pipeline
+cdk list -c env=staging      # staging-network, staging-data, staging-backend, staging-frontend, staging-deploy
 ```
 
 `cdk.json` at the repo root points the CLI at `infra/app.py`, so run these from the repo
@@ -40,13 +41,17 @@ them. Synth currently emits warnings (duplicate subnets in the ALB and subnet-gr
 properties, a stale RDS instance-class validator entry) but no errors.
 
 Five stacks per environment, deploy order following their dependencies:
-`<env>-network` → `<env>-data` → `<env>-backend` → `<env>-frontend` → `<env>-pipeline`.
+`<env>-network` → `<env>-data` → `<env>-backend` → `<env>-frontend` → `<env>-deploy`.
 
 That order is not a preference. `<env>-frontend` reads the backend's load balancer DNS
 name for the CloudFront `/api/*` behavior, so it cannot be deployed before
 `<env>-backend` exists. Every reference in the app runs one way — network → data →
-backend → frontend, with the pipeline last — because a reference pointing back the other
-way is a `DependencyCycle` that fails at synth.
+backend → frontend, with the deploy stack last — because a reference pointing back the
+other way is a `DependencyCycle` that fails at synth.
+
+There is one ordering constraint *between* environments as well: `staging-deploy` creates
+the account-global GitHub OIDC provider and `prod-deploy` imports it, so staging's deploy
+stack has to exist first. See "The deploy path" below.
 
 ---
 
@@ -161,54 +166,133 @@ One subtlety for whoever does that work: the `/api/*` behavior forwards the view
 ALB's certificate therefore has to cover the **public** host — `frontend_domain` — not
 the `*.elb.amazonaws.com` name.
 
-### 4. CodeStar Connections — a manual, console-only step
+### 4. Three settings on the GitHub side
 
-`codestar_connection_arn` is `REPLACE_WITH_CODESTAR_CONNECTION_ARN` in both configs.
-This one **cannot be automated**: CDK can create a connection resource, but the GitHub
-OAuth handshake that moves it from `PENDING` to `AVAILABLE` has to be completed by a
-human in the AWS console (Developer Tools → Settings → Connections → *Update pending
-connection*, then authorise the AWS Connector for GitHub app against `yosefsha/qbiq_h`).
-Paste the resulting ARN into `infra/config/staging.py` and `prod.py` before deploying the
-pipeline stack. A pipeline deployed against a `PENDING` connection deploys fine and then
-fails at the Source stage.
+The CodeStar connection is gone — deploys run from GitHub Actions over OIDC
+([ADR-004](adr/ADR-004-github-actions-over-codepipeline.md)), so there is no console
+handshake to complete. What replaced it is three things in **GitHub** repository
+settings, none of which the workflow can create for itself:
+
+1. **The `production` environment** (Settings → Environments → New environment →
+   `production`). Its name is not cosmetic: it appears in the OIDC subject claim the
+   deploy role trusts, `repo:yosefsha/qbiq_h:environment:production`, and it must match
+   `github_environment` in `infra/config/prod.py`. A mismatch fails the assume with
+   `Not authorized to perform sts:AssumeRoleWithWebIdentity`, which says nothing about
+   which claim was wrong.
+2. **Required reviewers on that environment.** This is the production gate.
+   `deploy.yml` declares `environment:`, which is what makes a job wait — but the
+   protection rule itself is a repository setting, so **until someone adds a reviewer,
+   production deploys unattended.** This is strictly weaker as a default than the
+   CodePipeline manual-approval action it replaces, and it is the one property this
+   change moved from enforced to configured.
+3. **A deployment-branch policy on that environment**, limited to `main`. This is the
+   only thing that binds the deploy to a branch. The trust policy cannot: one OIDC token
+   carries one `sub`, and a job that declares an environment stops presenting the ref, so
+   IAM can check *which environment* but not *which branch*. Without this rule, a
+   `workflow_dispatch` from any branch that names the `production` environment can assume
+   the role. (`deploy.yml` also guards on `github.ref == 'refs/heads/main'`, but that
+   guard lives in a file a branch can edit.)
+
+Repeat 1 and 3 for a `staging` environment if you intend to use the `workflow_dispatch`
+staging target; it needs no reviewer.
+
+Plus one repository **variable** (Settings → Secrets and variables → Actions →
+Variables): `AWS_ACCOUNT_ID`, the account the stacks were deployed into. The workflow
+builds the role ARN from it, because it has no credentials with which to look anything up
+before it has assumed the role. `AWS_REGION` and `SERVICE_NAME` are optional and default
+to `us-east-1` and `myapp`, matching `infra/config/`. There is deliberately **no AWS
+secret** — nothing long-lived is stored in GitHub.
 
 ### 5. ECR is empty on a brand-new environment
 
-`backend_stack.py` renders the task definition against `<repo>:latest`. On a first
-deploy that tag does not exist, tasks cannot pull, the service never stabilises, and the
-stack rolls back. Break the cycle by pushing any image to the repository before
-deploying the backend stack — the pipeline's backend build pushes both `latest` and the
-commit-SHA tag, so running it once is enough, as is a manual `docker build` + `docker
-push`.
+`backend_stack.py` renders both the service and the migration task definitions against
+`<repo>:latest`. On a first deploy that tag does not exist, tasks cannot pull, the
+service never stabilises, and the stack rolls back. Break the cycle by pushing any image
+to the repository *before* deploying the backend stack:
+
+```bash
+aws ecr get-login-password | docker login --username AWS --password-stdin \
+  <account>.dkr.ecr.us-east-1.amazonaws.com
+docker build -t <account>.dkr.ecr.us-east-1.amazonaws.com/myapp-backend:latest backend
+docker push <account>.dkr.ecr.us-east-1.amazonaws.com/myapp-backend:latest
+```
+
+The deploy workflow cannot do this for you: it needs the ECR repository that the backend
+stack creates, and it assumes a role that the deploy stack — deployed after the backend
+stack — creates. The bootstrap is by hand, once per environment.
 
 Also note `cdk bootstrap` must have been run for the account/region pair; the assets
 these stacks synthesize need the CDK bootstrap bucket and roles.
 
 ---
 
-## The pipeline
+## The deploy path
 
-`<env>-pipeline` is scoped to a single environment — it holds direct references to that
-environment's ECS service, S3 bucket and CloudFront distribution, so one pipeline cannot
-promote staging into production. Stages:
+Two workflows, and the split between them is the point
+([ADR-004](adr/ADR-004-github-actions-over-codepipeline.md)).
 
-- **Source** — GitHub via CodeStar Connections, branch `main`.
-- **Build** — two CodeBuild projects in parallel:
-  - *backend*: `pip install -r requirements-dev.txt`, `pytest -q`, `docker build`, push
-    both `:$CODEBUILD_RESOLVED_SOURCE_VERSION` and `:latest` to ECR, write
-    `imagedefinitions.json`.
-  - *frontend*: `npm ci`, `npm run lint`, `npm run build` (which runs `vue-tsc` first, so
-    a type error fails the pipeline).
-- **Approve** — a manual approval action, **production only**, notified via the
-  `ApprovalTopic` SNS topic. Subscribe an email or PagerDuty endpoint to it, or the
-  approval sits unnoticed.
-- **Deploy-\<Env\>** — `EcsDeployAction` for the backend and `S3DeployAction` for the
-  frontend, running independently at the same `run_order`, followed by a CloudBuild-run
-  CloudFront invalidation of `/*` (CodePipeline has no native invalidation action).
+**`.github/workflows/ci.yml` is the gate.** ruff, pytest against real Postgres and Redis,
+eslint, `vue-tsc`, vitest, and a build of both images, on every pull request and every
+push to `main`. It is the only place the suite runs.
 
-The container name is `backend`, defined once as `CONTAINER_NAME` in `backend_stack.py`
-and passed into the pipeline. If the two ever disagree, `EcsDeployAction` matches nothing
-and the deploy *succeeds* while changing no image — a silent no-op worth knowing about.
+**`.github/workflows/deploy.yml` deploys.** On push to `main`, or on `workflow_dispatch`
+with a `target` of `production` (default) or `staging`. Three jobs:
+
+- **`gate`** — refuses anything that is not on `main`, resolves the target to a CDK stack
+  prefix and a role ARN, then polls the GitHub API until `ci.yml` has concluded
+  `success` **for this exact commit**, failing on any other conclusion and timing out
+  after 45 minutes. The suite is deliberately not re-run here.
+- **`backend`** — assumes the deploy role, reads the `<env>-deploy` stack's outputs,
+  builds the image and pushes it as `:<commit-sha>` (and `:latest`, only as the bootstrap
+  tag the CDK task definitions reference). Then, in order:
+  1. register a **migration** task-definition revision pinned to `:<commit-sha>`, run it
+     as a one-off Fargate task in the private subnets with the task security group,
+     command `alembic upgrade head`;
+  2. wait for that task to stop and **fail the job on a non-zero container exit code** —
+     `run-task` returning successfully only means the task started;
+  3. register a **service** task-definition revision pinned to the same tag and update
+     the ECS service to it, waiting for stability.
+- **`frontend`** — `npm ci`, `npm run lint`, `npm run build`, `aws s3 sync dist/ --delete`,
+  then a CloudFront invalidation of `/*` which it waits on.
+
+`backend` and `frontend` are independent: neither `needs` the other, so a failing SPA
+build does not hold back an API fix.
+
+**The migration is why the runner never needs to be in the VPC.** RDS is in private
+subnets and admits only the ECS task security group, and a GitHub-hosted runner is a
+machine on the public internet. So `alembic upgrade head` runs *inside* the VPC as an ECS
+task, from the same image being deployed — the AWS equivalent of `docker-compose.yml`'s
+`migrate` service. It has its own single-container task definition
+(`myapp-<env>-migrate`) rather than a command override on the service's, because the
+service's definition also carries the X-Ray sidecar and its shutdown exit code would fail
+an honest exit-code check on every successful migration.
+
+Container names are defined once in `backend_stack.py` (`CONTAINER_NAME = "backend"`,
+`MIGRATION_CONTAINER_NAME = "migrate"`) and published as stack outputs, so the workflow
+never hardcodes them. If a name ever disagreed, the render step would match no container
+and the deploy would *succeed* while shipping the previous image — worth knowing about,
+and the reason they are outputs rather than literals.
+
+### Rolling back
+
+Every deploy registers a task-definition revision pinned to an immutable
+`:<commit-sha>` image, so a rollback is a redeploy of a known revision rather than a race
+with a floating tag:
+
+```bash
+aws ecs list-task-definitions --family-prefix <family> --sort DESC --max-items 5
+aws ecs update-service --cluster <cluster> --service <service> \
+  --task-definition <family>:<revision>
+aws ecs wait services-stable --cluster <cluster> --services <service>
+```
+
+**Migrations do not roll back with it.** `alembic upgrade head` has already run by the
+time the service is updated, so rolling the service back leaves the schema ahead of the
+code. That is safe for additive migrations and is not safe for a destructive one — a
+destructive migration has to be split into a backwards-compatible pair of releases, or
+reversed by hand with `alembic downgrade`.
+
+None of these commands have been run against a live service.
 
 ---
 

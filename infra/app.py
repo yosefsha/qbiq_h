@@ -6,9 +6,13 @@ from config.prod import PROD_CONFIG
 from config.staging import STAGING_CONFIG
 from stacks.network_stack import NetworkStack
 from stacks.data_stack import DataStack
-from stacks.backend_stack import CONTAINER_NAME, BackendStack
+from stacks.backend_stack import (
+    CONTAINER_NAME,
+    MIGRATION_CONTAINER_NAME,
+    BackendStack,
+)
 from stacks.frontend_stack import FrontendStack
-from stacks.pipeline_stack import PipelineStack
+from stacks.deploy_stack import DeployStack
 
 app = cdk.App()
 
@@ -62,19 +66,30 @@ frontend = FrontendStack(
     load_balancer=backend.service.load_balancer,
 )
 
-# The pipeline holds direct references to this environment's ECS service, S3
+# The deploy stack holds direct references to this environment's ECS service, S3
 # bucket and CloudFront distribution, so it is environment-scoped and must carry
 # an environment-prefixed name. A fixed name would make `cdk deploy -c env=staging`
 # and `-c env=prod` target one CloudFormation stack, each silently reconfiguring
-# the other's pipeline in place.
-PipelineStack(
+# the other's deploy role in place.
+#
+# It replaces the CodePipeline stack that used to sit here — the reasoning is in
+# ADR-004. What is left is the IAM half of the deploy: a trust in GitHub's OIDC
+# issuer and one least-privilege role, plus the outputs
+# `.github/workflows/deploy.yml` reads so that nothing about this environment is
+# hardcoded in YAML. The build and the ordering live in the workflow.
+DeployStack(
     app,
-    f"{target_env}-pipeline",
+    f"{target_env}-deploy",
     env=aws_env,
     env_config=env_config,
+    vpc=network.vpc,
     ecr_repo=backend.ecr_repo,
     service=backend.service.service,
+    task_definition=backend.service.task_definition,
     container_name=CONTAINER_NAME,
+    migration_task_definition=backend.migration_task_definition,
+    migration_container_name=MIGRATION_CONTAINER_NAME,
+    task_security_group=backend.task_security_group,
     frontend_bucket=frontend.bucket,
     distribution=frontend.distribution,
 )

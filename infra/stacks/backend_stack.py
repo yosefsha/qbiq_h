@@ -28,10 +28,13 @@ from constructs import Construct
 from stacks.data_stack import DataClientTarget
 
 
-#: Name of the application container. The pipeline writes this into
-#: imagedefinitions.json, so the two must agree or EcsDeployAction silently
-#: matches nothing and the deploy succeeds while changing no image.
+#: Name of the application container. `.github/workflows/deploy.yml` names it when
+#: it re-renders the task definition with the new image tag, so the two must agree
+#: or the render silently matches nothing and the deploy ships the previous image.
 CONTAINER_NAME = "backend"
+
+#: Name of the container in the one-off migration task definition below.
+MIGRATION_CONTAINER_NAME = "migrate"
 
 #: Port uvicorn listens on inside the container.
 CONTAINER_PORT = 8000
@@ -119,14 +122,16 @@ class BackendStack(Stack):
             desired_count=env_config["backend_desired_count"],
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
                 # `latest` is a bootstrap tag only. Steady-state image selection
-                # is owned by the pipeline's EcsDeployAction, which overrides
-                # this with the commit-SHA tag from imagedefinitions.json. The
-                # pipeline pushes both tags so this reference is resolvable.
+                # is owned by `.github/workflows/deploy.yml`, which re-renders
+                # this task definition with the commit-SHA tag and registers it
+                # as a new revision. The workflow pushes both tags, so this
+                # reference stays resolvable.
                 #
                 # Chicken-and-egg on a brand new environment: ECR is empty at
                 # first `cdk deploy`, so tasks cannot pull and the service never
-                # stabilises. Run the pipeline's build once (or push any image
-                # to the repo by hand) before the first deploy of this stack.
+                # stabilises. Push any image to the repo by hand before the first
+                # deploy of this stack — the workflow cannot do it for you,
+                # because it needs the ECR repository this stack creates.
                 image=ecs.ContainerImage.from_ecr_repository(self.ecr_repo, "latest"),
                 container_name=CONTAINER_NAME,
                 container_port=CONTAINER_PORT,
@@ -187,6 +192,12 @@ class BackendStack(Stack):
         scaling.scale_on_cpu_utilization("CpuScaling", target_utilization_percent=70)
 
         self._add_xray_daemon(log_group)
+        self.migration_task_definition = self._add_migration_task(
+            env_config=env_config,
+            log_group=log_group,
+            data_environment=data_environment,
+            data_secrets=data_secrets,
+        )
         self.alarm_topic = self._add_alarms(env_config)
 
         CfnOutput(
@@ -367,6 +378,81 @@ class BackendStack(Stack):
             )
         )
 
+    def _add_migration_task(
+        self,
+        env_config: dict,
+        log_group: logs.LogGroup,
+        data_environment: Mapping[str, str],
+        data_secrets: Mapping[str, ecs.Secret],
+    ) -> ecs.FargateTaskDefinition:
+        """A one-off task that runs `alembic upgrade head` and exits.
+
+        This is the AWS half of docker-compose.yml's `migrate` service, and it
+        exists for the same reason: the schema must be brought to head by *the
+        exact build being deployed*, from the same image, before any task running
+        the new code serves a request. `.github/workflows/deploy.yml` renders this
+        definition with the new image tag, runs it, waits for it to stop, and only
+        updates the service if the container exited 0.
+
+        **Why a separate task definition rather than the service's, with the
+        command overridden.** Overriding the command on the service's definition
+        looks simpler and has a trap in it: that definition has two containers, and
+        the X-Ray daemon is one of them. When the overridden `backend` container
+        exits, ECS stops the whole task, and the daemon's own exit code — 137, or
+        absent entirely if it never started — is reported alongside it. Every
+        exit-code check worth having looks at *all* containers in the task, so a
+        perfectly successful migration would fail the deploy on the sidecar's
+        shutdown code. A single-container definition has one exit code and it means
+        what it says. It also gets its own `migrate/` log stream instead of
+        interleaving with request logs.
+
+        **Why this can reach the database at all.** The workflow launches it into
+        the private subnets with `task_security_group` attached — the same group
+        the service's tasks use, and the only source the RDS ingress rule above
+        admits. That is also the answer to the one thing CodeBuild could do that a
+        GitHub-hosted runner cannot: run inside the VPC (ADR-004). Nothing runs on
+        the runner that needs to reach RDS; the migration runs here.
+
+        It carries the service's full environment and secrets rather than a
+        database-only subset, because `alembic/env.py` reuses
+        `app.db.session.engine` and therefore imports `app.settings`, which raises
+        at import if the database parts are incomplete. Handing it the same
+        configuration the application gets means the migration fails in exactly the
+        way the application would, rather than in a way unique to migrations.
+        """
+        task_definition = ecs.FargateTaskDefinition(
+            self,
+            "MigrationTask",
+            # Explicit, because the deploy role's `ecs:RunTask` permission is
+            # written against this family name (see deploy_stack.py) and the
+            # workflow fetches the definition by it. A CDK-generated family would
+            # make both a token nobody can grep for.
+            family=f"{env_config['service_name']}-{env_config['environment']}-migrate",
+            cpu=256,
+            memory_limit_mib=512,
+        )
+
+        task_definition.add_container(
+            MIGRATION_CONTAINER_NAME,
+            # `latest` is the bootstrap tag, exactly as for the service: the
+            # workflow replaces it with the commit-SHA tag before registering the
+            # revision it actually runs. See the chicken-and-egg note above.
+            image=ecs.ContainerImage.from_ecr_repository(self.ecr_repo, "latest"),
+            # The command is set here as well as overridden in the workflow, so
+            # that `aws ecs run-task --task-definition <family>` by hand does the
+            # right thing during an incident without anyone having to remember the
+            # override.
+            command=["alembic", "upgrade", "head"],
+            essential=True,
+            logging=ecs.LogDrivers.aws_logs(
+                stream_prefix="migrate", log_group=log_group
+            ),
+            environment=self._task_environment(env_config, data_environment),
+            secrets=dict(data_secrets),
+        )
+
+        return task_definition
+
     # ------------------------------------------------------------------
     # Alarms
     # ------------------------------------------------------------------
@@ -539,6 +625,41 @@ class BackendStack(Stack):
                     ),
                 }
             ],
+        )
+
+        NagSuppressions.add_resource_suppressions(
+            self.migration_task_definition,
+            [
+                {
+                    "id": "AwsSolutions-ECS2",
+                    "reason": (
+                        "Identical to the service task definition above, and for the "
+                        "same reason: the plain environment variables are the database "
+                        "and cache host/port/name, the CORS origin list, the cookie "
+                        "flag, two TTLs and a log level. The username, password and "
+                        "Redis AUTH token are `secrets` entries resolved from Secrets "
+                        "Manager at task start. The migration task carries the "
+                        "application's whole configuration on purpose — see the "
+                        "docstring on _add_migration_task."
+                    ),
+                }
+            ],
+        )
+
+        NagSuppressions.add_resource_suppressions(
+            self.migration_task_definition.execution_role,
+            [
+                {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": (
+                        "The CDK-generated ECS task execution policy for the migration "
+                        "task: ecr:GetAuthorizationToken is only valid on Resource '*' "
+                        "per the ECR API, and the CloudWatch Logs grant is scoped to "
+                        "this stack's own log group."
+                    ),
+                }
+            ],
+            apply_to_children=True,
         )
 
         NagSuppressions.add_resource_suppressions(
