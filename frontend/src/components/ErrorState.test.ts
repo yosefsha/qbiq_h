@@ -53,10 +53,20 @@ describe('ErrorState', () => {
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })
 
-  it('does not offer a retry for a parse failure caused by a malformed 4xx-adjacent response', () => {
+  it('does not offer a retry for a 4xx, which retrying cannot fix', () => {
     const error: ApiError = { kind: 'http', status: 400, message: 'Bad request' }
     const wrapper = mount(ErrorState, { props: { error } })
 
     expect(wrapper.find('button').exists()).toBe(false)
+  })
+
+  it('offers a retry for a parse failure', () => {
+    // This case had no coverage: the test above was titled "parse failure" but
+    // passed a `kind: 'http'` error and asserted the opposite of what a real
+    // parse failure does.
+    const error: ApiError = { kind: 'parse', message: 'Malformed body' }
+    const wrapper = mount(ErrorState, { props: { error } })
+
+    expect(wrapper.find('button').exists()).toBe(true)
   })
 })

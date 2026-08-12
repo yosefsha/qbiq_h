@@ -54,25 +54,55 @@ describe('useAsyncRequest', () => {
     expect(requestFn).not.toHaveBeenCalled()
   })
 
-  it('ignores a re-entrant execute() call while a request is already in flight', async () => {
-    let resolveFirst: (result: ApiResult<{ id: string }>) => void = () => {}
+  it('re-issues on execute() during an in-flight request, and the newest response wins', async () => {
+    // This previously asserted the opposite — that a re-entrant execute() was
+    // ignored. That silently dropped the call while still resolving as though
+    // it had run, so a view re-executing on a route-param change (product 1 ->
+    // 2 mid-flight) rendered the first product forever.
+    const resolvers: ((result: ApiResult<{ id: string }>) => void)[] = []
     const requestFn = vi.fn<() => Promise<ApiResult<{ id: string }>>>(
       () =>
         new Promise((resolve) => {
-          resolveFirst = resolve
+          resolvers.push(resolve)
         }),
     )
 
-    const { status, execute } = useAsyncRequest(requestFn, { immediate: false })
+    const { status, data, execute } = useAsyncRequest(requestFn, { immediate: false })
 
     const firstCall = execute()
     const secondCall = execute()
 
-    resolveFirst({ ok: true, data: { id: '1' } })
+    expect(requestFn).toHaveBeenCalledTimes(2)
+
+    // The superseded request lands LAST — the stale-response guard has to
+    // discard it rather than let it overwrite the newer result.
+    resolvers[1]!({ ok: true, data: { id: '2' } })
+    resolvers[0]!({ ok: true, data: { id: '1' } })
     await Promise.all([firstCall, secondCall])
 
     expect(status.value).toBe('success')
-    expect(requestFn).toHaveBeenCalledTimes(1)
+    expect(data.value).toEqual({ id: '2' })
+  })
+
+  it('clears stale data when a refresh fails, so data and error are never both set', async () => {
+    let call = 0
+    const requestFn = vi.fn<() => Promise<ApiResult<{ id: string }>>>(async () => {
+      call += 1
+      return call === 1
+        ? { ok: true, data: { id: '1' } }
+        : { ok: false, error: { kind: 'http', status: 500, message: 'boom' } }
+    })
+
+    const { status, data, error, execute } = useAsyncRequest(requestFn, { immediate: false })
+
+    await execute()
+    expect(data.value).toEqual({ id: '1' })
+
+    await execute()
+
+    expect(status.value).toBe('error')
+    expect(error.value).toBeDefined()
+    expect(data.value).toBeUndefined()
   })
 
   it('never rejects even if requestFn throws synchronously instead of returning an ApiResult', async () => {

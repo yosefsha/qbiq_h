@@ -13,6 +13,7 @@
  * rejection here.
  */
 import { getCurrentInstance, onUnmounted, ref, shallowRef } from 'vue'
+import type { Ref, ShallowRef } from 'vue'
 
 import type { ApiError, ApiResult, AsyncRequestStatus } from '../types'
 
@@ -22,10 +23,18 @@ export interface UseAsyncRequestOptions {
 }
 
 export interface UseAsyncRequestReturn<T> {
-  status: ReturnType<typeof ref<AsyncRequestStatus>>
-  data: ReturnType<typeof shallowRef<T | undefined>>
-  error: ReturnType<typeof shallowRef<ApiError | undefined>>
-  /** Issues (or re-issues) the request. Safe to call while a request is already in flight — it's a no-op then. */
+  // Written out rather than `ReturnType<typeof ref<AsyncRequestStatus>>`, which
+  // resolves to `Ref<AsyncRequestStatus | undefined>` — TypeScript picks ref's
+  // no-argument overload — advertising an `undefined` status that can never
+  // occur and that every consumer would have to assert away.
+  status: Ref<AsyncRequestStatus>
+  data: ShallowRef<T | undefined>
+  error: ShallowRef<ApiError | undefined>
+  /**
+   * Issues (or re-issues) the request. Calling it while one is in flight
+   * starts a new request; the newest one wins and older responses are
+   * discarded when they land.
+   */
   execute: () => Promise<void>
   /** Re-issues the same request. Intended for a "Retry" button's `@click`. */
   retry: () => Promise<void>
@@ -61,10 +70,11 @@ export function useAsyncRequest<T>(
   }
 
   async function execute(): Promise<void> {
-    if (status.value === 'loading') {
-      return
-    }
-
+    // Deliberately NOT skipped when a request is already in flight. Bailing out
+    // there dropped the call silently and still resolved as though it had run:
+    // a view re-executing on a route-param change (product 1 -> 2 mid-flight)
+    // never issued the second request and rendered the first product forever.
+    // Overlap is instead resolved below by the token — newest request wins.
     const token = ++requestToken
     status.value = 'loading'
     error.value = undefined
@@ -76,6 +86,7 @@ export function useAsyncRequest<T>(
       result = { ok: false, error: toNetworkError(cause) }
     }
 
+    // A superseded response must not overwrite the newer request's state.
     if (disposed || token !== requestToken) {
       return
     }
@@ -84,6 +95,10 @@ export function useAsyncRequest<T>(
       data.value = result.data
       status.value = 'success'
     } else {
+      // Cleared so that exactly one of `data`/`error` is ever populated.
+      // Leaving it meant a failed refresh rendered stale content beside an
+      // error banner, with no way for a view to tell which to trust.
+      data.value = undefined
       error.value = result.error
       status.value = 'error'
     }
