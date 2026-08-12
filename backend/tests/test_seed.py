@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,20 @@ def session_fixture() -> Iterator[Session]:
         connection = engine.connect()
     except OperationalError as exc:
         pytest.skip(f"Postgres is not reachable at DATABASE_URL: {exc}")
+
+    # Reachable but un-migrated is the DEFAULT state for anyone who has not run
+    # `alembic upgrade head` — and it raises ProgrammingError, not
+    # OperationalError, so guarding only the connection above turned a missing
+    # prerequisite into four confusing test ERRORs rather than a skip.
+    # Inspected via the engine, not the connection: running a query on the
+    # connection would begin an implicit transaction, and the explicit
+    # `connection.begin()` below then fails outright.
+    if not inspect(engine).has_table(Product.__tablename__):
+        connection.close()
+        pytest.skip(
+            "Postgres is reachable but the schema is missing. "
+            "Run `alembic upgrade head` from backend/ first."
+        )
 
     outer_transaction = connection.begin()
     session = Session(bind=connection, join_transaction_mode="create_savepoint")
