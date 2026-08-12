@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Self
+
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-
-from app.domain.catalog import Category, Product, ProductDetail, Review
 
 
 class HealthResponse(BaseModel):
@@ -28,9 +28,34 @@ class _CamelModel(BaseModel):
     Shared by the catalogue schemas (BE-05) and the Cart schemas (BE-07),
     which arrived at this same base independently — one definition, so the
     two halves of the API cannot drift on casing.
+
+    `from_attributes=True` is what lets `from_domain` below read a domain
+    dataclass directly, so no subclass has to restate its fields.
     """
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    @classmethod
+    def from_domain(cls, obj: object) -> Self:
+        """Builds this wire model from the domain dataclass it mirrors.
+
+        Derived, not written out. Every schema here shares its field names
+        with the frozen dataclass in `app.domain.catalog`, so Pydantic can
+        read the attributes itself — recursively, since the nested schemas
+        share this base. Each subclass previously carried a `from_domain`
+        listing all of its fields, and `ProductDetailResponse` listed all
+        of its parent's too; adding a field to a domain type then meant
+        editing every one of them, and forgetting simply dropped the field
+        from the response with no test failing.
+
+        Extra attributes are ignored, so a `ProductDetail` passed where a
+        `ProductSummaryResponse` is wanted is projected down rather than
+        rejected — which is what `GET /api/products` relies on when the
+        repository hands it a detail (Liskov).
+        """
+        return cls.model_validate(obj)
 
 
 class CategoryResponse(_CamelModel):
@@ -48,10 +73,6 @@ class CategoryResponse(_CamelModel):
     slug: str
     name: str
 
-    @classmethod
-    def from_domain(cls, category: Category) -> "CategoryResponse":
-        return cls(slug=category.slug, name=category.name)
-
 
 class ReviewResponse(_CamelModel):
     """Wire shape for `Review`."""
@@ -60,12 +81,6 @@ class ReviewResponse(_CamelModel):
     author: str
     rating: int
     body: str
-
-    @classmethod
-    def from_domain(cls, review: Review) -> "ReviewResponse":
-        return cls(
-            id=review.id, author=review.author, rating=review.rating, body=review.body
-        )
 
 
 class ProductSummaryResponse(_CamelModel):
@@ -84,38 +99,12 @@ class ProductSummaryResponse(_CamelModel):
     thumbnail_url: str
     category: CategoryResponse
 
-    @classmethod
-    def from_domain(cls, product: Product) -> "ProductSummaryResponse":
-        return cls(
-            id=product.id,
-            name=product.name,
-            price_minor=product.price_minor,
-            currency=product.currency,
-            short_description=product.short_description,
-            thumbnail_url=product.thumbnail_url,
-            category=CategoryResponse.from_domain(product.category),
-        )
-
 
 class ProductDetailResponse(ProductSummaryResponse):
     """Wire shape for a product detail page: a summary plus long-form content."""
 
     long_description: str
     reviews: tuple[ReviewResponse, ...]
-
-    @classmethod
-    def from_domain(cls, product: ProductDetail) -> "ProductDetailResponse":
-        return cls(
-            id=product.id,
-            name=product.name,
-            price_minor=product.price_minor,
-            currency=product.currency,
-            short_description=product.short_description,
-            thumbnail_url=product.thumbnail_url,
-            category=CategoryResponse.from_domain(product.category),
-            long_description=product.long_description,
-            reviews=tuple(ReviewResponse.from_domain(r) for r in product.reviews),
-        )
 
 
 class ProductListResponse(_CamelModel):
@@ -137,9 +126,8 @@ class _CamelRequestModel(_CamelModel):
     silently accepted and ignored.
     """
 
-    model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, extra="forbid"
-    )
+    # Merged over `_CamelModel`'s config, so only the difference is stated.
+    model_config = ConfigDict(extra="forbid")
 
 
 class CartLineItemView(_CamelModel):
