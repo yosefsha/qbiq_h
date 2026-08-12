@@ -31,15 +31,39 @@ PROD_CONFIG = {
     "domain_name": "example.com",
     "frontend_domain": "app.example.com",
     "custom_domain_enabled": False,
-    # Protocol CloudFront uses to reach the ALB on the `/api/*` behavior. It has
-    # to match what the ALB listener actually speaks, or the edge answers 502 and
-    # nothing in the application logs says why. The listener is owned by
-    # backend_stack.py and is HTTP:80 today, for want of an ACM certificate;
-    # flip this to "HTTPS" in the same change that gives it one.
-    "alb_listener_protocol": "HTTP",
     "backend_desired_count": 2,
     "backend_min_tasks": 2,
     "backend_max_tasks": 10,
+    # Protocol the ALB listener speaks — one key, read by backend_stack.py to
+    # build the listener and by frontend_stack.py for CloudFront's
+    # OriginProtocolPolicy on the `/api/*` behaviour. They have to agree or the
+    # edge answers 502 and nothing in the application log says why, which is
+    # why this is a single setting rather than one on each side.
+    # "HTTPS" switches the listener to 443 (plus an HTTP:80 listener that only
+    # redirects) and requires `alb_certificate_arn` below. Production must not
+    # be deployed on "HTTP": the session cookie would cross the CloudFront->ALB
+    # hop in clear. That is enforced, not merely asserted — `backend_stack.py`
+    # refuses to synthesize production on HTTP once `custom_domain_enabled` is
+    # True, which is the point at which a certificate can actually be issued.
+    # It stays "HTTP" here only because this environment has no delegated zone
+    # yet, and so cannot have a certificate either.
+    "alb_listener_protocol": "HTTP",
+    # The ACM certificate the HTTPS listener presents. Empty because
+    # `domain_name` above is a placeholder and a certificate cannot be issued
+    # against a zone that does not exist. It must cover `frontend_domain`, not
+    # the ALB's own *.elb.amazonaws.com name: CloudFront forwards the viewer's
+    # Host header and uses it for SNI to this origin. See docs/runbook.md.
+    "alb_certificate_arn": "",
+    # Where CloudWatch alarms are sent. `None` creates the SNS topic with no
+    # subscription — the alarms still fire and are still visible in the
+    # console, but nobody is paged. Set a real address before relying on them.
+    "alarm_email": None,
+    # Application runtime settings injected into the task definition. They
+    # match backend/app/settings.py's own defaults today; they are here so an
+    # environment can differ without a code change.
+    "cache_ttl_seconds": 300,
+    "session_ttl_seconds": 1800,
+    "log_level": "INFO",
     # Data tier. Multi-AZ, two weeks of backups and deletion protection are what
     # let data_stack.py leave the corresponding cdk-nag rules unsuppressed here —
     # staging suppresses them by name and says so.
