@@ -30,6 +30,18 @@ PROD_CONFIG = {
     "backend_desired_count": 2,
     "backend_min_tasks": 2,
     "backend_max_tasks": 10,
+    # Data tier. Multi-AZ, two weeks of backups and deletion protection are what
+    # let data_stack.py leave the corresponding cdk-nag rules unsuppressed here —
+    # staging suppresses them by name and says so.
+    "db_instance_type": "t4g.medium",
+    "db_allocated_storage": 50,
+    "db_max_allocated_storage": 500,
+    "db_backup_retention_days": 14,
+    "db_multi_az": True,
+    "db_deletion_protection": True,
+    "cache_node_type": "cache.t4g.small",
+    "cache_replicas": 2,
+    "cache_snapshot_retention_days": 7,
     "github_owner": "yosefsha",
     "github_repo": "qbiq_h",
     "github_branch": "main",
