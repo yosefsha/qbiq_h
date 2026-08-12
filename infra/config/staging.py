@@ -88,9 +88,15 @@ STAGING_CONFIG = {
     # the assume with an unhelpful "Not authorized to perform sts:AssumeRoleWithWebIdentity".
     "github_environment": "staging",
     # An IAM OIDC provider is account-global and staging shares an account with
-    # production, so exactly one environment may create it. Staging does, and
-    # `prod-deploy` imports it by its (fully determined) ARN — which means
-    # `staging-deploy` has to be deployed first. Split the accounts and both
-    # environments set this to True.
-    "create_github_oidc_provider": True,
+    # production, so exactly one environment may create it — and in this account
+    # the provider already exists, created outside CDK. Both environments
+    # therefore import it by its (fully determined) ARN and neither creates it.
+    #
+    # Set this to True only for an account that has no
+    # `token.actions.githubusercontent.com` provider yet; deploying it against
+    # one that does fails with `EntityAlreadyExists`, because an IAM OIDC
+    # provider is account-global and unique per URL. Check before flipping it:
+    #
+    #   aws iam list-open-id-connect-providers
+    "create_github_oidc_provider": False,
 }
