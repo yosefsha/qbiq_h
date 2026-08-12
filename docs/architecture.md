@@ -64,7 +64,7 @@ CloudFront:
 
 ```mermaid
 flowchart LR
-    browser["Browser<br/>localhost:${WEB_PORT:-80}"]
+    browser["Browser<br/>localhost:WEB_PORT (default 80)"]
     web["web (nginx)<br/>serves dist/<br/>location /api/ → api:8000<br/>location = /health → api:8000<br/>try_files → index.html"]
     api["api (FastAPI)<br/>uvicorn :8000"]
     pg[("postgres:16")]
