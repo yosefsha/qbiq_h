@@ -8,18 +8,20 @@
 
 ### Project Structure
 ```
-app/
-  __init__.py
-  main.py            # FastAPI app, route definitions
-  models.py           # Pydantic request/response schemas
-  <domain>.py         # Business logic classes
-  <domain>_loader.py  # Data loading / parsing utilities
-tests/
-  __init__.py
-  test_<module>.py    # Mirror app/ structure
-config/
-  *.json              # Runtime configuration files
+backend/
+  app/
+    __init__.py
+    main.py             # FastAPI app, route definitions
+    models.py           # Pydantic request/response schemas
+    settings.py         # Environment-driven configuration
+    <domain>.py         # Business logic classes
+    repositories/       # Storage implementations behind Protocols
+  tests/
+    __init__.py
+    test_<module>.py    # Mirror app/ structure
+  requirements.txt
 ```
+The backend lives in `backend/` and the SPA in `frontend/`, so each Docker build context covers one service only.
 
 ### Code Style
 - Type-annotate all function signatures including return types.
@@ -39,6 +41,7 @@ config/
 - Use FastAPI's `TestClient` for API/integration tests.
 - Unit tests should construct dependencies inline (no shared global fixtures for business logic).
 - Test both success paths and error/edge cases.
+- Run tests from `backend/`: `pytest -q`
 - Run a single test: `pytest tests/test_file.py::test_name`
 
 ### Dependencies
@@ -51,15 +54,21 @@ config/
 
 ### Project Structure
 ```
-src/
-  main.ts             # Entry point (createApp)
-  App.vue             # Root component
-  types.ts            # Shared type definitions
-  parser.ts           # Pure utility functions
-  components/
-    <Name>.vue        # One component per file, PascalCase filename
-  composables/
-    use<Name>.ts      # Reusable stateful logic, camelCase `use` prefix
+frontend/
+  package.json
+  vite.config.ts
+  src/
+    main.ts             # Entry point (createApp)
+    App.vue             # Root component
+    types.ts            # Shared type definitions
+    api/client.ts       # The only module that calls fetch
+    router/index.ts     # Route definitions
+    components/
+      <Name>.vue        # One component per file, PascalCase filename
+    composables/
+      use<Name>.ts      # Reusable stateful logic, camelCase `use` prefix
+    stores/
+      <name>.ts         # Pinia stores
 ```
 
 ### Code Style

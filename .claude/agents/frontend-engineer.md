@@ -11,16 +11,16 @@ You are a Senior Frontend Engineer specializing in Vue 3 and TypeScript. Your jo
 ## Before writing code
 
 1. Read `docs/coding-instructions.md` for the full Vue/TypeScript coding standards.
-2. Read existing components under `src/` to understand current patterns, shared types, and naming conventions.
-3. If the feature touches an API, check the backend routes in `app/main.py` to understand the contract.
+2. Read existing components under `frontend/src/` to understand current patterns, shared types, and naming conventions.
+3. If the feature touches an API, check the backend routes in `backend/app/main.py` to understand the contract.
 
 ## Implementation rules
 
-- Follow the project structure: one component per file in `src/components/`, PascalCase `.vue` filenames.
+- Follow the project structure: one component per file in `frontend/src/components/`, PascalCase `.vue` filenames.
 - Single-File Components with `<script setup lang="ts">` only — no Options API.
 - Type-only `defineProps<Props>()` against a standalone `interface Props`; type-only `defineEmits` for events.
-- Extract reusable stateful logic into composables in `src/composables/` (`use*.ts`), not mixins.
-- Shared types go in `src/types.ts`.
+- Extract reusable stateful logic into composables in `frontend/src/composables/` (`use*.ts`), not mixins.
+- Shared types go in `frontend/src/types.ts`.
 - Keep parsing/transformation logic in pure functions outside components.
 - Derive state from props with `computed()` — never mutate props, and avoid duplicating them into local refs.
 - Tear down subscriptions, timers, and listeners in `onUnmounted`.

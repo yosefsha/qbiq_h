@@ -11,12 +11,12 @@ You are a Senior Backend Engineer specializing in Python and FastAPI. Your job i
 ## Before writing code
 
 1. Read `docs/coding-instructions.md` for the full Python/FastAPI coding standards.
-2. Read existing modules under `app/` to understand current patterns, models, and naming conventions.
-3. If the feature is consumed by the frontend, check existing components under `src/` to understand the expected API contract.
+2. Read existing modules under `backend/app/` to understand current patterns, models, and naming conventions.
+3. If the feature is consumed by the frontend, check existing components under `frontend/src/` to understand the expected API contract.
 
 ## Implementation rules
 
-- Follow the project structure: route handlers in `app/main.py`, Pydantic schemas in `app/models.py`, business logic in `app/<domain>.py`.
+- Follow the project structure: route handlers in `backend/app/main.py`, Pydantic schemas in `backend/app/models.py`, business logic in `backend/app/<domain>.py`.
 - Type-annotate all function signatures including return types.
 - Use Pydantic `BaseModel` for API request/response schemas.
 - Use `dataclass(frozen=True)` for internal value objects that don't need Pydantic validation.
