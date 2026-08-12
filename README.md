@@ -17,7 +17,7 @@ the catalogue and Redis for Sessions and Carts.
 One command, from a clean checkout, with Docker running:
 
 ```bash
-docker compose --profile prod-like up --build
+docker compose up --build
 ```
 
 Then open **<http://localhost>** — port 80 by default, or whatever `WEB_PORT` you set
@@ -37,7 +37,7 @@ reads, and the stack runs with no `.env` present at all.
 
 | Variable | Default | What it publishes |
 |---|---|---|
-| `WEB_PORT` | `80` | nginx serving the SPA (`prod-like`) |
+| `WEB_PORT` | `80` | nginx serving the SPA |
 | `VITE_PORT` | `5173` | Vite dev server (`dev`) |
 | `API_PORT` | `8000` | FastAPI |
 | `POSTGRES_PORT` | `5432` | Postgres |
@@ -60,30 +60,34 @@ keeps CORS correct automatically.
 
 ---
 
-## The two Compose profiles
+## Services and the `dev` profile
 
-`postgres`, `redis`, `migrate` and `api` carry no profile, so they start under either
-one. The profile only picks how the SPA is served.
+Everything below starts by default. Only `web-dev` sits behind a profile.
 
 ```bash
-docker compose --profile prod-like up   # nginx + built SPA  -> http://localhost:${WEB_PORT:-80}
-docker compose --profile dev up         # Vite + HMR         -> http://localhost:${VITE_PORT:-5173}
+docker compose up                  # the storefront -> http://localhost:${WEB_PORT:-80}
+docker compose up web-dev          # Vite + HMR     -> http://localhost:${VITE_PORT:-5173}
 ```
+
+Naming `web-dev` explicitly enables its profile and pulls in only its dependencies, so
+you get the dev server without also running nginx. `docker compose --profile dev up`
+runs both, which is occasionally useful for comparing them.
 
 | Service | Profile | What it is |
 |---|---|---|
-| `postgres` | both | `postgres:16-alpine`, catalogue storage, volume `pgdata` |
-| `redis` | both | `redis:7-alpine`, Sessions and Carts. Started with `--maxmemory-policy noeviction` deliberately: every key carries a TTL, so an LRU policy could evict Carts. The production form of that question is the open item in [ADR-003](docs/adr/ADR-003-managed-aws-data-tier.md) |
-| `migrate` | both | Runs `alembic upgrade head && python -m app.seed`, then exits. Shares `api`'s image tag so schema and code can never drift |
-| `api` | both | FastAPI on uvicorn with 4 workers; health-checked on `GET /health` |
-| `web` | `prod-like` | nginx serving the built SPA and **path-routing `/api/` to `api:8000`** |
+| `postgres` | default | `postgres:16-alpine`, catalogue storage, volume `pgdata` |
+| `redis` | default | `redis:7-alpine`, Sessions and Carts. Started with `--maxmemory-policy noeviction` deliberately: every key carries a TTL, so an LRU policy could evict Carts. The production form of that question is the open item in [ADR-003](docs/adr/ADR-003-managed-aws-data-tier.md) |
+| `migrate` | default | Runs `alembic upgrade head && python -m app.seed`, then exits. Shares `api`'s image tag so schema and code can never drift |
+| `api` | default | FastAPI on uvicorn with 4 workers; health-checked on `GET /health` |
+| `web` | default | nginx serving the built SPA and **path-routing `/api/` to `api:8000`** |
 | `web-dev` | `dev` | `node:22-alpine` running `npm ci && npm run dev`, with Vite proxying `/api` to `http://api:8000` |
 
-`prod-like` is the profile worth using by default, because it is the one that exercises
-the real production shape: SPA and API on **one origin**, which is what keeps the
-session cookie `SameSite=Lax` instead of forcing it to `None`
-([ADR-001](docs/adr/ADR-001-server-owned-cart.md)). `dev` gets you hot module reload;
-Vite's proxy reproduces the same single-origin illusion for the browser.
+nginx is the default because it is the shape that matches production: SPA and API on
+**one origin**, which is what keeps the session cookie `SameSite=Lax` instead of forcing
+it to `None` ([ADR-001](docs/adr/ADR-001-server-owned-cart.md)). It was previously behind
+a `prod-like` profile, which meant a plain `docker compose up` started an API with no
+storefront in front of it. `web-dev` gets you hot module reload; Vite's proxy reproduces
+the same single-origin illusion for the browser.
 
 ---
 

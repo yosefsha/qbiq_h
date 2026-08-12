@@ -59,7 +59,7 @@ mechanisms, not one.
 
 ## The same shape locally
 
-`docker compose --profile prod-like up` reproduces it with nginx standing in for
+`docker compose up` reproduces it with nginx standing in for
 CloudFront:
 
 ```mermaid
