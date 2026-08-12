@@ -14,6 +14,7 @@ from app.health import HealthCheck
 from app.logging_config import configure_logging
 from app.middleware import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.models import HealthResponse
+from app.session import SessionCookieMiddleware
 from app.settings import settings
 
 configure_logging()
@@ -27,6 +28,12 @@ app = FastAPI(title="qbiq_h API")
 # and the SPA sees an opaque network failure it cannot distinguish from an
 # unreachable server.
 app.add_middleware(RequestIdMiddleware)
+# Outside RequestIdMiddleware, deliberately. That middleware converts an
+# unhandled exception into a 500 response, so from here the failure looks like
+# an ordinary response and the session cookie can still be attached to it.
+# Registered inside it instead, an exception would propagate straight past this
+# layer and a first-time Shopper would lose their session on any error.
+app.add_middleware(SessionCookieMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.allowed_origins),
