@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from app.domain.cart import Cart
-from app.domain.catalog import Product, ProductPage, ProductQuery
+from app.domain.catalog import Product, ProductDetail, ProductPage, ProductQuery
 
 
 @runtime_checkable
@@ -29,7 +29,27 @@ class ProductRepository(Protocol):
         ...
 
     def get_product(self, product_id: str) -> Product | None:
-        """Return the product with `product_id`, or `None` if it does not exist."""
+        """Return the product with `product_id`, or `None` if it does not exist.
+
+        Returns the summary shape used by list views. For the detail page,
+        which additionally needs the long description and reviews, use
+        `get_product_detail` rather than downcasting this result.
+        """
+        ...
+
+    def get_product_detail(self, product_id: str) -> ProductDetail | None:
+        """Return the full detail for `product_id`, or `None` if absent.
+
+        Part of the Protocol deliberately. `ProductDetail` was previously
+        reachable only on the concrete in-memory fake, which forced any caller
+        wanting a long description or reviews — that is, BE-05's
+        `GET /products/{id}` — either to `isinstance`-downcast the result of
+        `get_product` or to type-annotate against the fake. Both defeat the
+        storage-agnostic boundary this module exists to draw.
+
+        Implementations should load reviews here and NOT in `list_products`,
+        which would otherwise issue a query per row.
+        """
         ...
 
 

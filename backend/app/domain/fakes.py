@@ -77,10 +77,9 @@ class InMemoryRepository:
     def get_product_detail(self, product_id: str) -> ProductDetail | None:
         """Return the seeded `ProductDetail` for `product_id`, if any.
 
-        Not part of `ProductRepository` — that Protocol's contract returns
-        `Product | None`. This is a convenience for callers (and tests) that
-        seeded this fake with `ProductDetail` instances and want the long
-        description/reviews back without a second, storage-specific lookup.
+        Satisfies `ProductRepository.get_product_detail`. Returns `None` for a
+        product seeded only as a summary `Product`, matching a storage-backed
+        implementation that finds the row but has no detail content for it.
         """
         product = self._products.get(product_id)
         return product if isinstance(product, ProductDetail) else None

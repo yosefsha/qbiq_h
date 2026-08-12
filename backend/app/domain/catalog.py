@@ -70,6 +70,12 @@ class ProductDetail(Product):
     reviews: tuple[Review, ...]
 
 
+#: Largest page a caller may request. The HTTP layer should surface a request
+#: above this as a 422 rather than silently clamping, so a client paging with a
+#: too-large limit learns it is doing so instead of quietly getting short pages.
+MAX_PAGE_SIZE = 100
+
+
 @dataclass(frozen=True)
 class ProductQuery:
     """Filter, sort, and page parameters for listing the catalogue."""
@@ -84,6 +90,13 @@ class ProductQuery:
     def __post_init__(self) -> None:
         if self.limit < 0:
             raise ValueError("limit must be >= 0")
+        if self.limit > MAX_PAGE_SIZE:
+            # Enforced here so every implementation inherits the ceiling. The
+            # catalogue is public and unauthenticated (ADR-002), so without a
+            # bound `?limit=1000000000` becomes an unbounded scan of the
+            # products table the moment this query reaches Postgres in BE-04 —
+            # cheap for the caller, expensive for the database.
+            raise ValueError(f"limit must be <= {MAX_PAGE_SIZE}")
         if self.offset < 0:
             raise ValueError("offset must be >= 0")
 
