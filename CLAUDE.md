@@ -36,6 +36,8 @@ Plus a `Depends on:` line and links to any ADR that constrains the work.
 
 **Working a task:** read the issue and `CONTEXT.md` — you should not need to read another task's code. Where an issue links an ADR, that ADR is a constraint, not a suggestion; if you find yourself wanting to violate it, raise it rather than quietly diverging. Tick `Done when` boxes as you go, so an interrupted session can be resumed from the issue alone. If a task turns out to need a decision that is hard to reverse, write a new ADR before continuing.
 
+**Branch and worktree rules are binding, and live in [docs/coding-instructions.md](docs/coding-instructions.md):** no commit is ever made on `main`, one branch per task, and one worktree per task whenever subagents work in parallel.
+
 ```bash
 gh issue list --repo yosefsha/qbiq_h --label area:backend
 gh issue view 4 --repo yosefsha/qbiq_h
