@@ -45,7 +45,7 @@ gh issue view 4 --repo yosefsha/qbiq_h
 
 All configuration below is production-grade. Infrastructure is defined as code using **AWS CDK (Python)**.
 
-> **Current state:** INF-03 is done — `cdk.json` at the repo root points the CLI at `infra/app.py`, dependencies are pinned in `infra/requirements.txt`, and `cdk synth -c env=staging` / `-c env=prod` both succeed. `infra/` holds `app.py` and five stacks (network, data, backend, frontend, deploy); INF-04 added the data stack, and INF-07 replaced the pipeline stack with the deploy stack ([ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md)). Nothing has been deployed, and the hosted-zone and availability-zone lookups in `cdk.json` are seeded by hand so synthesis works offline — replace them before any `cdk deploy`.
+> **Current state:** INF-03 is done — `cdk.json` at the repo root points the CLI at `infra/app.py`, dependencies are pinned in `infra/requirements.txt`, and `cdk synth -c env=staging` / `-c env=prod` both succeed. `infra/` holds `app.py` and six stacks (network, data, ecr, backend, frontend, deploy); INF-04 added the data stack, INF-07 replaced the pipeline stack with the deploy stack ([ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md)), and the ECR repository was later split out of the backend stack so a brand-new environment can be deployed at all. Nothing has been deployed and `scripts/deploy-to-aws.sh` has never been run; the hosted-zone and availability-zone lookups in `cdk.json` are seeded by hand so synthesis works offline — replace them before any `cdk deploy`.
 >
 > ```bash
 > python3 -m venv .venv && .venv/bin/pip install -r infra/requirements.txt
@@ -61,13 +61,24 @@ infra/
     __init__.py
     network_stack.py   # VPC, subnets, security groups
     data_stack.py      # RDS Postgres + ElastiCache for Redis
+    ecr_stack.py       # The container registry, alone so it can be deployed first
     backend_stack.py   # ECS/Fargate service for FastAPI
     frontend_stack.py  # S3 + CloudFront for Vue SPA
     deploy_stack.py    # GitHub OIDC provider + the deploy role Actions assumes
   config/
     prod.py            # Production environment config
     staging.py         # Staging environment config
+
+scripts/
+  deploy-to-aws.sh     # One-command deploy of a whole environment
+  destroy-aws.sh       # cdk destroy in reverse order
 ```
+
+**`<env>-ecr` is deployed before everything else, and an image is pushed between it and
+`<env>-backend`.** The backend's service and migration task definitions both reference
+`<repo>:latest`; a registry created by the same stack that consumes it is empty at the
+moment the ECS service tries to pull, so the service never stabilises and CloudFormation
+rolls the whole deploy back. `scripts/deploy-to-aws.sh` performs that order.
 
 ### Backend (FastAPI on ECS Fargate)
 - Deploy as a Docker container on **ECS Fargate** behind an **ALB**.
@@ -112,9 +123,12 @@ See [ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md) for why this
 - Migrations run from the image being deployed, never from the runner: a GitHub-hosted runner cannot reach RDS in a private subnet, and this is the only thing in the project that needed CodeBuild's VPC attachment.
 
 ### Networking
-- **VPC** with public and private subnets across 2+ AZs.
-- ALB in public subnets, ECS tasks in private subnets.
-- **NAT Gateway** for outbound internet from private subnets.
+- **VPC** with public and **private isolated** subnets across 2+ AZs.
+- **No NAT Gateway.** It was ~$32/month before any data passed through it — the largest single line item in a demo environment — so it was removed, and with it the `PRIVATE_WITH_EGRESS` subnets.
+- ALB **and ECS tasks** in the public subnets; tasks carry a public IP (`assign_public_ip=True`). That is how they reach ECR, Secrets Manager and CloudWatch Logs at task start without a NAT. **A public IP is not public access**: the task security group admits inbound from the ALB security group on port 8000 and nothing else, so the ALB is still the only ingress path.
+- RDS and ElastiCache stay in the **private isolated** subnets — no route to an internet gateway at all — reachable only from the ECS task security group.
+- Rejected alternative, so it is not "fixed" later: interface VPC endpoints for ECR (api + dkr), Secrets Manager and CloudWatch Logs cost ~$7.20/month each, so four is ~$29/month against the NAT's ~$32 — the same bill with more moving parts.
+- **What this costs:** the RDS secret's managed rotation Lambda needs egress to the Secrets Manager API and no longer has any, so automatic rotation is removed and rotation is manual. See `data_stack.py` and `docs/runbook.md`.
 - Security groups: ALB allows inbound 443 only; ECS tasks allow inbound from ALB security group on port 8000 only.
 
 ### Monitoring & Observability

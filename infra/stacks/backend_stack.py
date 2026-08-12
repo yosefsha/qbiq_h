@@ -1,10 +1,15 @@
-"""API tier: ECR, an ECS Fargate service in private subnets, and an ALB.
+"""API tier: an ECS Fargate service in private subnets, and an ALB.
 
-References run **backend -> data** and never the other way. Everything this
-stack needs from the data tier arrives as constructor arguments, and the
-security group rules that let these tasks into Postgres and Redis are
+References run **backend -> data** and **backend -> ecr**, never the other way.
+Everything this stack needs from the data tier arrives as constructor arguments,
+and the security group rules that let these tasks into Postgres and Redis are
 declared here rather than there — see the comment on `data_client_targets`
 below, and the matching one in `network_stack.py`.
+
+The ECR repository used to be created here. It is now its own stack
+(`ecr_stack.py`, `<env>-ecr`) and arrives as `ecr_repo`, because a repository
+created *by* this stack is empty at the moment this stack's service tries to
+pull from it — see the docstring there for the deploy order that resolves it.
 """
 
 from collections.abc import Mapping, Sequence
@@ -50,12 +55,18 @@ class BackendStack(Stack):
         construct_id: str,
         env_config: dict,
         vpc: ec2.IVpc,
+        ecr_repo: ecr.IRepository,
         data_environment: Mapping[str, str],
         data_secrets: Mapping[str, ecs.Secret],
         data_client_targets: Sequence[DataClientTarget],
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        #: The registry both task definitions below pull from. Created by
+        #: `<env>-ecr` and passed in, never created here — see the module
+        #: docstring.
+        self.ecr_repo = ecr_repo
 
         # Owned here rather than in the network stack: the load balancer construct
         # below adds its own ingress rule to this group, so a group belonging to
@@ -92,14 +103,6 @@ class BackendStack(Stack):
                 description=target.description,
             )
 
-        self.ecr_repo = ecr.Repository(
-            self,
-            "BackendRepo",
-            repository_name=f"{env_config['service_name']}-backend",
-            removal_policy=RemovalPolicy.RETAIN,
-            lifecycle_rules=[ecr.LifecycleRule(max_image_count=20)],
-        )
-
         cluster = ecs.Cluster(
             self, "Cluster", vpc=vpc, container_insights_v2=ecs.ContainerInsights.ENABLED
         )
@@ -127,11 +130,12 @@ class BackendStack(Stack):
                 # as a new revision. The workflow pushes both tags, so this
                 # reference stays resolvable.
                 #
-                # Chicken-and-egg on a brand new environment: ECR is empty at
-                # first `cdk deploy`, so tasks cannot pull and the service never
-                # stabilises. Push any image to the repo by hand before the first
-                # deploy of this stack — the workflow cannot do it for you,
-                # because it needs the ECR repository this stack creates.
+                # Chicken-and-egg on a brand new environment: this tag has to
+                # exist in ECR before this stack is deployed, or the tasks cannot
+                # pull, the service never stabilises, and CloudFormation rolls the
+                # stack back after its timeout. That is why the repository is
+                # `<env>-ecr` and not this stack — deploy it, push an image, then
+                # deploy this. `scripts/deploy-to-aws.sh` does exactly that.
                 image=ecs.ContainerImage.from_ecr_repository(self.ecr_repo, "latest"),
                 container_name=CONTAINER_NAME,
                 container_port=CONTAINER_PORT,
@@ -144,6 +148,36 @@ class BackendStack(Stack):
             ),
             security_groups=[self.task_security_group],
             public_load_balancer=True,
+            # Tasks run in the PUBLIC subnets with a public IP, and this is a
+            # cost decision with a security consequence that is worth stating
+            # rather than skimming.
+            #
+            # **Why.** The VPC has no NAT Gateway (~$32/month, removed — see
+            # `network_stack.py`). A Fargate task must reach ECR to pull its
+            # image, and Secrets Manager and CloudWatch Logs to start at all.
+            # With no NAT, a task in a private subnet can reach none of them and
+            # dies with an image-pull timeout, which shows up as a task that
+            # never passes its health check — the failure looks like a bug in
+            # the application. A public subnet plus a public IP gives the task
+            # egress through the internet gateway at no hourly cost.
+            #
+            # **A public IP is not public access.** `self.task_security_group`
+            # above admits inbound traffic from the load balancer's security
+            # group only, on port 8000. Nothing on the internet can open a
+            # connection to a task; the public IP is an egress mechanism, and
+            # the ALB remains the only ingress path.
+            #
+            # **The data tier does not follow.** RDS and ElastiCache stay in
+            # PRIVATE_ISOLATED subnets with no route to an internet gateway,
+            # reachable only from this security group.
+            #
+            # **Rejected alternative**, so this is not "fixed" later: interface
+            # VPC endpoints for ECR api/dkr, Secrets Manager and CloudWatch Logs
+            # would keep the tasks private, but at ~$7.20/month each that is
+            # ~$29/month against the NAT's ~$32 — the same bill with more moving
+            # parts.
+            task_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            assign_public_ip=True,
             # CLAUDE.md's rolling deployment, stated explicitly rather than
             # inherited: without these, CDK warns at synth that the 50% default
             # applies and half the tasks are drained before a replacement is
@@ -205,7 +239,11 @@ class BackendStack(Stack):
             "LoadBalancerDnsName",
             value=self.service.load_balancer.load_balancer_dns_name,
         )
-        CfnOutput(self, "EcrRepositoryUri", value=self.ecr_repo.repository_uri)
+        # No `EcrRepositoryUri` output here any more: the repository is not this
+        # stack's to publish. `<env>-ecr` exports it as `RepositoryUri` (which is
+        # what scripts/deploy-to-aws.sh reads, before this stack exists) and
+        # `<env>-deploy` re-exports it as `EcrRepositoryUri` for
+        # .github/workflows/deploy.yml, whose contract is unchanged.
 
         # Environment/Service/Owner tags are applied once at the App in app.py and
         # propagate into this stack, so they are deliberately not repeated here.
@@ -435,8 +473,9 @@ class BackendStack(Stack):
         task_definition.add_container(
             MIGRATION_CONTAINER_NAME,
             # `latest` is the bootstrap tag, exactly as for the service: the
-            # workflow replaces it with the commit-SHA tag before registering the
-            # revision it actually runs. See the chicken-and-egg note above.
+            # workflow (and scripts/deploy-to-aws.sh) replaces it with the
+            # commit-SHA tag before registering the revision it actually runs.
+            # See the chicken-and-egg note above.
             image=ecs.ContainerImage.from_ecr_repository(self.ecr_repo, "latest"),
             # The command is set here as well as overridden in the workflow, so
             # that `aws ecs run-task --task-definition <family>` by hand does the

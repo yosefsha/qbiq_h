@@ -152,9 +152,11 @@ class DeployStack(Stack):
         # The output *keys* are the contract. Renaming one breaks `deploy.yml`,
         # which greps for it by name.
         # ------------------------------------------------------------------
-        private_subnets = vpc.select_subnets(
-            subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
-        )
+        # The PUBLIC subnets, matching where the service's own tasks run. This
+        # VPC has no NAT Gateway (network_stack.py), so a one-off task in an
+        # isolated subnet could not pull its image from ECR or read its secrets,
+        # and would die with an image-pull timeout before `alembic` ever ran.
+        task_subnets = vpc.select_subnets(subnet_type=ec2.SubnetType.PUBLIC)
 
         outputs = {
             "GitHubActionsRoleArn": self.role.role_arn,
@@ -168,12 +170,19 @@ class DeployStack(Stack):
             "MigrationContainerName": migration_container_name,
             # `aws ecs run-task` needs an explicit awsvpc configuration; a Fargate
             # task launched outside a service inherits nothing from the service.
-            # These are the same private subnets and the same security group the
+            # These are the same subnets and the same security group the
             # service's tasks use, which is what lets the migration reach RDS —
             # the ingress rule in backend_stack.py admits this security group and
             # nothing else.
-            "DeploySubnetIds": Fn.join(",", private_subnets.subnet_ids),
+            "DeploySubnetIds": Fn.join(",", task_subnets.subnet_ids),
             "DeploySecurityGroupId": task_security_group.security_group_id,
+            # Published rather than assumed by the caller. With no NAT Gateway
+            # these are public subnets, and a task in a public subnet without a
+            # public IP has no route to ECR at all: it fails to pull and stops
+            # before running a single command. Both `.github/workflows/deploy.yml`
+            # and `scripts/deploy-to-aws.sh` read this instead of hardcoding it,
+            # so restoring a NAT Gateway later is a change in one place.
+            "DeployAssignPublicIp": "ENABLED",
             "FrontendBucketName": frontend_bucket.bucket_name,
             "CloudFrontDistributionId": distribution.distribution_id,
         }

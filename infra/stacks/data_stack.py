@@ -68,7 +68,12 @@ class DataStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         is_production = env_config["environment"] == "prod"
-        private_subnets = ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS)
+        # `PRIVATE_ISOLATED`, not `PRIVATE_WITH_EGRESS`: the VPC has no NAT
+        # Gateway (see `network_stack.py` for why), so there is no egress subnet
+        # to put these in. Neither Postgres nor Redis ever needed outbound
+        # internet, so this is strictly stronger for them — these subnets have no
+        # route to an internet gateway at all.
+        private_subnets = ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED)
 
         # ------------------------------------------------------------------
         # Security groups
@@ -148,16 +153,28 @@ class DataStack(Stack):
         #: type stubs but is always present with `from_generated_secret`.
         self.database_secret: secretsmanager.ISecret = self.database.secret  # type: ignore[assignment]
 
-        # Rotation is set up here rather than left to an operator: a credential
-        # that is never rotated is one long-lived password shared by every task
-        # for the life of the environment. The managed single-user rotation
-        # Lambda runs inside the VPC and reaches the instance through a security
-        # group rule this call adds to `DatabaseSg`.
-        self.database.add_rotation_single_user(
-            automatically_after=Duration.days(30),
-            exclude_characters=PASSWORD_EXCLUDE_CHARACTERS,
-            vpc_subnets=private_subnets,
-        )
+        # Automatic rotation used to be configured here, with
+        # `add_rotation_single_user`. It has been removed, and this comment is
+        # the record of what that costs rather than a silent deletion.
+        #
+        # The managed rotation Lambda runs inside the VPC and has to call the
+        # Secrets Manager API to read the pending secret and mark the rotation
+        # complete. That is an internet-facing AWS endpoint. Removing the NAT
+        # Gateway (see `network_stack.py`) leaves it no route to reach it, and a
+        # Lambda in a VPC never gets a public IP of its own, so there is no
+        # public-subnet trick equivalent to the one the ECS tasks use. Left in
+        # place it would not fail at deploy — it would fail every 30 days, quietly,
+        # marking the secret rotation-failed where nobody is looking.
+        #
+        # Bringing it back costs one Secrets Manager interface VPC endpoint
+        # (~$7.20/month) and one line: pass `endpoint=` to
+        # `add_rotation_single_user`. That is the trade, stated so it can be made
+        # deliberately.
+        #
+        # Until then the password is long-lived and rotation is manual: change the
+        # secret, then force a new deployment, because ECS resolves `secrets`
+        # entries at task start and rotating one does not restart a running task.
+        # `docs/runbook.md` carries both commands.
 
         # ------------------------------------------------------------------
         # ElastiCache for Redis
@@ -170,7 +187,7 @@ class DataStack(Stack):
             "CacheSubnetGroup",
             description="Private subnets across every AZ in the VPC",
             subnet_ids=vpc.select_subnets(
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
             ).subnet_ids,
         )
 
@@ -324,6 +341,39 @@ class DataStack(Stack):
         self._suppress_nag_findings(is_production=is_production)
 
     def _suppress_nag_findings(self, is_production: bool) -> None:
+        # By path, not by construct. `DatabaseInstance.secret` is the
+        # `SecretTargetAttachment`, not the `DatabaseSecret` underneath it, so
+        # suppressing on `self.database_secret` annotates the attachment and the
+        # finding on the secret itself survives. This is the CfnSecret cdk-nag
+        # actually reports.
+        NagSuppressions.add_resource_suppressions_by_path(
+            self,
+            f"/{self.stack_name}/Database/Secret/Resource",
+            [
+                {
+                    "id": "AwsSolutions-SMG4",
+                    "reason": (
+                        "This secret rotated until the NAT Gateway was removed to cut "
+                        "~$32/month from a demo environment. Secrets Manager's managed "
+                        "single-user rotation runs as a Lambda inside the VPC and has to "
+                        "call the Secrets Manager API to finish; with no NAT there is no "
+                        "route to it, and a Lambda in a VPC never gets a public IP, so "
+                        "the public-subnet arrangement the ECS tasks use has no "
+                        "equivalent here. Leaving it configured would not fail at deploy "
+                        "— it would fail every 30 days, silently, which is worse than "
+                        "not having it. Restoring it costs one Secrets Manager interface "
+                        "VPC endpoint (~$7.20/month) plus `endpoint=` on "
+                        "add_rotation_single_user; see the comment where the call used "
+                        "to be. Meanwhile the password is generated by CloudFormation, "
+                        "exists in no file in this repository, is readable only through "
+                        "Secrets Manager, and reaches the task as an ECS `secrets` entry "
+                        "resolved at task start. Rotating it by hand is two commands, in "
+                        "docs/runbook.md."
+                    ),
+                }
+            ],
+        )
+
         NagSuppressions.add_resource_suppressions(
             self.database,
             [
@@ -395,15 +445,18 @@ class DataStack(Stack):
                 {
                     "id": "AwsSolutions-SMG4",
                     "reason": (
-                        "The database secret does rotate — see add_rotation_single_user "
-                        "above. This one cannot be rotated the same way: AWS publishes no "
-                        "managed rotation function for an ElastiCache AUTH token, because "
-                        "changing it is a two-phase ModifyReplicationGroup (ROTATE, then "
-                        "SET) against the cluster rather than a write to the datastore. "
-                        "The token is generated by CloudFormation, is never in this "
-                        "repository, and every connection that uses it is TLS-encrypted "
-                        "inside the VPC. Replace this with a custom rotation Lambda if "
-                        "the cache ever holds anything that outlives a session."
+                        "Neither secret in this stack rotates, but for two different "
+                        "reasons, and this one is the harder of the two: AWS publishes no "
+                        "managed rotation function for an ElastiCache AUTH token at all, "
+                        "because changing it is a two-phase ModifyReplicationGroup "
+                        "(ROTATE, then SET) against the cluster rather than a write to "
+                        "the datastore. So unlike the database secret above — which "
+                        "rotated until the NAT Gateway was removed and would work again "
+                        "with one VPC endpoint — restoring this needs a custom Lambda "
+                        "written from scratch. The token is generated by CloudFormation, "
+                        "is never in this repository, and every connection that uses it "
+                        "is TLS-encrypted inside the VPC. Write that Lambda if the cache "
+                        "ever holds anything that outlives a session."
                     ),
                 }
             ],

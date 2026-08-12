@@ -18,14 +18,26 @@ STAGING_CONFIG = {
     "domain_name": "example.com",
     "frontend_domain": "staging.example.com",
     "custom_domain_enabled": False,
-    # Two tasks, not one, in staging as well as production. CLAUDE.md states
-    # min 2 / max 10 without an environment qualifier, and a single task makes
-    # the two properties this environment exists to rehearse untestable: it
-    # pins the service to one AZ, and a rolling deploy at
-    # minimumHealthyPercent 100 never has a second task to shift traffic to.
-    # The difference is one 0.25 vCPU / 0.5 GB Fargate task.
-    "backend_desired_count": 2,
-    "backend_min_tasks": 2,
+    # ONE task in staging, not two. This reverses what INF-05 decided here, and
+    # the reversal is deliberate, so the old reasoning is restated rather than
+    # deleted: two tasks kept the service off a single AZ and gave a rolling
+    # deploy at minimumHealthyPercent 100 somewhere to shift traffic to, which is
+    # a property worth rehearsing before production relies on it.
+    #
+    # Staging is a demo environment and cost won. One 0.25 vCPU / 0.5 GB Fargate
+    # task is ~$9/month, and it is not worth that to rehearse a deployment
+    # property in an environment nobody is depending on.
+    #
+    # **A rolling deploy still works at one task.** minimumHealthyPercent 100 with
+    # maximumPercent 200 lets ECS start the replacement *before* stopping the
+    # original — 1 task, ceiling of 2 — so there is no gap in availability. What
+    # is actually given up is AZ redundancy: a single task lives in one AZ, and
+    # losing that AZ takes staging down until ECS reschedules. Production keeps
+    # two (infra/config/prod.py) and is not touched by this.
+    #
+    # max stays at 10, so a load test can still scale this environment out.
+    "backend_desired_count": 1,
+    "backend_min_tasks": 1,
     "backend_max_tasks": 10,
     # Protocol the ALB listener speaks — one key, read by backend_stack.py to
     # build the listener and by frontend_stack.py for CloudFront's

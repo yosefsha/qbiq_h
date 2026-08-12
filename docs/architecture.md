@@ -14,12 +14,12 @@ flowchart TB
         s3[("S3 bucket<br/>built SPA, private")]
     end
 
-    subgraph vpc["VPC"]
+    subgraph vpc["VPC — no NAT Gateway"]
         subgraph public["Public subnets (2 AZs)"]
             alb["Application Load Balancer<br/>health check: GET /health"]
+            ecs["ECS Fargate tasks<br/>FastAPI / uvicorn :8000<br/>public IP for egress only<br/>inbound: ALB SG on 8000"]
         end
-        subgraph private["Private subnets (2 AZs)"]
-            ecs["ECS Fargate tasks<br/>FastAPI / uvicorn :8000"]
+        subgraph private["Private ISOLATED subnets (2 AZs)<br/>no route to the internet"]
             rds[("RDS PostgreSQL<br/>catalogue")]
             redis[("ElastiCache Redis<br/>session:{id}, cart:{id}")]
         end
@@ -51,11 +51,30 @@ than only in local development. The reasoning is in
 [ADR-003](adr/ADR-003-managed-aws-data-tier.md).
 
 **2. S3 and CloudFront are edge services and are not in the VPC.** Only ECS, RDS and
-ElastiCache sit inside the network boundary; RDS and ElastiCache are in private subnets
-reachable only from the ECS task security group, never from the internet. There is no
-security group you can attach to CloudFront, and no subnet an S3 bucket lives in — so
-"lock the data tier down to the VPC" and "serve the SPA from the edge" are two different
-mechanisms, not one.
+ElastiCache sit inside the network boundary; RDS and ElastiCache are in private isolated
+subnets reachable only from the ECS task security group, never from the internet. There
+is no security group you can attach to CloudFront, and no subnet an S3 bucket lives in —
+so "lock the data tier down to the VPC" and "serve the SPA from the edge" are two
+different mechanisms, not one.
+
+**3. The ECS tasks are in the public subnets, with public IPs, and that is a cost
+decision.** There is no NAT Gateway: it cost ~$32/month before a byte of data crossed it,
+which is the largest single line item in an environment this size. A Fargate task must
+reach ECR, Secrets Manager and CloudWatch Logs to start at all, so with no NAT it needs a
+public IP and a public subnet — otherwise it dies with an image-pull timeout that looks
+exactly like a health-check failure.
+
+The security posture is unchanged by that move, and the distinction is worth being precise
+about: **a public IP is an egress mechanism, not an ingress one.** The task security group
+admits inbound traffic from the ALB's security group on port 8000 and from nowhere else,
+so nothing on the internet can open a connection to a task. The ALB remains the only way
+in. The data tier did not move: RDS and ElastiCache are in subnets with no route to an
+internet gateway.
+
+The alternative — interface VPC endpoints for ECR api/dkr, Secrets Manager and CloudWatch
+Logs — would keep the tasks private at ~$7.20/month each, which is ~$29/month against the
+NAT's ~$32. That is the same bill with more moving parts, so it was rejected rather than
+overlooked.
 
 ## The same shape locally
 
@@ -133,14 +152,23 @@ frontend/src/
   router/            /, /products/:id, /cart, catch-all
 
 infra/
-  app.py             CDK app; stacks are <env>-network|data|backend|frontend|deploy
-  stacks/            network, data, backend, frontend, deploy
+  app.py             CDK app; stacks are <env>-network|data|ecr|backend|frontend|deploy
+  stacks/            network, data, ecr, backend, frontend, deploy
   config/            staging.py, prod.py
+
+scripts/
+  deploy-to-aws.sh   Stand an environment up from nothing, in one command
+  destroy-aws.sh     cdk destroy in reverse order, behind a typed confirmation
 
 .github/workflows/
   ci.yml             The test gate: ruff, pytest, eslint, vue-tsc, vitest, image builds
   deploy.yml         Deploy on merge to main (ADR-004)
 ```
+
+`ecr` is a stack of its own — one repository and two outputs — because the backend's task
+definitions pull `<repo>:latest` and that tag has to exist *before* the ECS service tries
+to start. Registry, then image, then everything that consumes the image;
+`scripts/deploy-to-aws.sh` walks that order.
 
 ## How a merge reaches production
 
