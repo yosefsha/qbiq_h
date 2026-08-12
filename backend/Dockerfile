@@ -29,6 +29,14 @@ COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /srv
 COPY app ./app
+# Migrations ship in the runtime image deliberately. `alembic upgrade head` runs
+# from this same image — as the `migrate` service locally, and as a one-off task
+# before the ECS rolling deploy — so the schema is always migrated by the exact
+# build being deployed, never by whatever version a developer's laptop happens
+# to have checked out. `alembic/env.py` reuses `app.db.session.engine`, so it
+# needs `app` on the path, which WORKDIR already provides.
+COPY alembic.ini ./
+COPY alembic ./alembic
 
 USER appuser
 EXPOSE 8000

@@ -93,15 +93,27 @@ def test_seed_is_idempotent_on_row_counts(session: Session) -> None:
     """Rerunning the seed must not create duplicate rows."""
     seed_catalogue(session)
 
-    category_count_first = session.execute(text("select count(*) from category")).scalar_one()
-    product_count_first = session.execute(text("select count(*) from product")).scalar_one()
-    review_count_first = session.execute(text("select count(*) from review")).scalar_one()
+    category_count_first = session.execute(
+        text("select count(*) from category")
+    ).scalar_one()
+    product_count_first = session.execute(
+        text("select count(*) from product")
+    ).scalar_one()
+    review_count_first = session.execute(
+        text("select count(*) from review")
+    ).scalar_one()
 
     seed_catalogue(session)
 
-    category_count_second = session.execute(text("select count(*) from category")).scalar_one()
-    product_count_second = session.execute(text("select count(*) from product")).scalar_one()
-    review_count_second = session.execute(text("select count(*) from review")).scalar_one()
+    category_count_second = session.execute(
+        text("select count(*) from category")
+    ).scalar_one()
+    product_count_second = session.execute(
+        text("select count(*) from product")
+    ).scalar_one()
+    review_count_second = session.execute(
+        text("select count(*) from review")
+    ).scalar_one()
 
     assert category_count_second == category_count_first
     assert product_count_second == product_count_first

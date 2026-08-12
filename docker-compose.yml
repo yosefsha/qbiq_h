@@ -41,9 +41,31 @@ services:
       timeout: 3s
       retries: 10
 
+  # Brings the schema up to head and loads the catalogue, then exits. `api`
+  # waits on it completing successfully, so `docker compose up` yields a
+  # populated database rather than an empty one that every product query
+  # returns nothing from. Both the seeder and `alembic upgrade head` are
+  # idempotent, so this is safe to re-run on every start.
+  #
+  # Shares `api`'s image tag so the migration runs from the same build as the
+  # code that will query the schema — a drift between the two is exactly the
+  # failure this service exists to make impossible.
+  migrate:
+    build:
+      context: ./backend
+    image: qbiq-h-api:local
+    command: ["sh", "-c", "alembic upgrade head && python -m app.seed"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-qbiq}:${POSTGRES_PASSWORD:-qbiq}@postgres:5432/${POSTGRES_DB:-qbiq_h}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: ./backend
+    image: qbiq-h-api:local
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-qbiq}:${POSTGRES_PASSWORD:-qbiq}@postgres:5432/${POSTGRES_DB:-qbiq_h}
       REDIS_URL: redis://redis:6379/0
@@ -61,6 +83,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "${API_PORT:-8000}:8000"
     healthcheck:

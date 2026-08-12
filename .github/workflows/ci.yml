@@ -141,8 +141,27 @@ jobs:
                   time.sleep(2)
           PY
 
+      - name: Migrate the database (alembic upgrade head)
+        # Without this, Postgres is reachable but schema-less, and every
+        # database-backed test skips itself rather than failing — so the suite
+        # goes green having never touched a table. Running the migration here
+        # makes those tests actually execute, and doubles as a check that the
+        # migration itself applies cleanly to an empty database on every PR.
+        run: alembic upgrade head
+
       - name: Test (pytest)
-        run: pytest -q
+        # A skip is a CI failure here, not a pass. The database-backed fixtures
+        # skip themselves when the schema is absent — deliberate, so the suite
+        # stays usable on a laptop with no Postgres — but in CI that same skip
+        # would let a broken repository through green. With the migration step
+        # above, nothing should legitimately skip; if something ever must, this
+        # gate is the right place to have that argued out explicitly.
+        run: |
+          pytest -q -rs | tee pytest-output.txt
+          if grep -qE '[0-9]+ skipped' pytest-output.txt; then
+            echo "::error::Tests were skipped in CI — see the skip reasons above."
+            exit 1
+          fi
 
   frontend:
     name: Frontend — eslint + vue-tsc + vitest + build
