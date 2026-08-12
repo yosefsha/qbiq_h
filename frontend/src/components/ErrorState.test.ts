@@ -69,4 +69,27 @@ describe('ErrorState', () => {
 
     expect(wrapper.find('button').exists()).toBe(true)
   })
+
+  it('announces itself to assistive tech via role="alert", for every error kind', () => {
+    const errors: ApiError[] = [
+      { kind: 'http', status: 404, message: 'x' },
+      { kind: 'http', status: 500, message: 'x' },
+      { kind: 'network', message: 'x' },
+      { kind: 'parse', message: 'x' },
+    ]
+
+    for (const error of errors) {
+      const wrapper = mount(ErrorState, { props: { error } })
+      expect(wrapper.attributes('role')).toBe('alert')
+    }
+  })
+
+  it('gives the retry button an accessible name from its own visible text, not just an icon', () => {
+    const error: ApiError = { kind: 'network', message: 'Failed to fetch' }
+    const wrapper = mount(ErrorState, { props: { error } })
+
+    const button = wrapper.get('button')
+    expect(button.element.tagName).toBe('BUTTON')
+    expect(button.text()).toBe('Retry')
+  })
 })

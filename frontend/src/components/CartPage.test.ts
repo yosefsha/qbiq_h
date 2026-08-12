@@ -102,7 +102,7 @@ describe('CartPage', () => {
     })
     mockedApiClient.patch.mockResolvedValueOnce({ ok: true, data: surprising })
 
-    const increment = wrapper.find('[data-product-id="1"] [aria-label="Increase quantity"]')
+    const increment = wrapper.find('[data-product-id="1"] [aria-label="Increase quantity of Widget"]')
     await increment.trigger('click')
     await flushPromises()
 
@@ -119,7 +119,7 @@ describe('CartPage', () => {
 
     mockedApiClient.delete.mockResolvedValueOnce({ ok: true, data: cart({ items: [], totalMinor: 0 }) })
 
-    const decrement = wrapper.find('[data-product-id="2"] [aria-label="Decrease quantity"]')
+    const decrement = wrapper.find('[data-product-id="2"] [aria-label="Decrease quantity of Gadget"]')
     await decrement.trigger('click')
     await flushPromises()
 
@@ -174,8 +174,8 @@ describe('CartPage', () => {
       }),
     )
 
-    const row1Increment = wrapper.find('[data-product-id="1"] [aria-label="Increase quantity"]')
-    const row2Increment = wrapper.find('[data-product-id="2"] [aria-label="Increase quantity"]')
+    const row1Increment = wrapper.find('[data-product-id="1"] [aria-label="Increase quantity of Widget"]')
+    const row2Increment = wrapper.find('[data-product-id="2"] [aria-label="Increase quantity of Gadget"]')
 
     await row1Increment.trigger('click')
     await wrapper.vm.$nextTick()
@@ -205,5 +205,45 @@ describe('CartPage', () => {
     await flushPromises()
 
     expect(mockedApiClient.get).not.toHaveBeenCalled()
+  })
+
+  describe('accessibility', () => {
+    it("names each row's quantity and remove controls with the item, not the generic \"Increase quantity\"", async () => {
+      mockedApiClient.get.mockResolvedValueOnce({ ok: true, data: cart() })
+      const wrapper = await mountCartPage()
+      await flushPromises()
+
+      const row = wrapper.get('[data-product-id="1"]')
+      expect(row.find('[aria-label="Increase quantity of Widget"]').exists()).toBe(true)
+      expect(row.find('[aria-label="Decrease quantity of Widget"]').exists()).toBe(true)
+      expect(row.find('[aria-label="Remove Widget from cart"]').exists()).toBe(true)
+    })
+
+    it('announces the cart summary through a single polite live region', async () => {
+      mockedApiClient.get.mockResolvedValueOnce({ ok: true, data: cart() })
+      const wrapper = await mountCartPage()
+      await flushPromises()
+
+      const liveRegions = wrapper.findAll('[aria-live="polite"]')
+      expect(liveRegions).toHaveLength(1)
+      expect(liveRegions[0]?.text()).toBe('3 items in your cart. Total $25.00.')
+    })
+
+    it('announces the empty cart through that same live region', async () => {
+      mockedApiClient.get.mockResolvedValueOnce({ ok: true, data: cart({ items: [], totalMinor: 0 }) })
+      const wrapper = await mountCartPage()
+      await flushPromises()
+
+      expect(wrapper.get('[aria-live="polite"]').text()).toBe('Your cart is empty.')
+    })
+
+    it('leaves the live region empty on a load failure so it does not talk over ErrorState\'s role="alert"', async () => {
+      mockedApiClient.get.mockResolvedValueOnce({ ok: false, error: networkError })
+      const wrapper = await mountCartPage()
+      await flushPromises()
+
+      expect(wrapper.get('[aria-live="polite"]').text()).toBe('')
+      expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    })
   })
 })

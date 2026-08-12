@@ -110,11 +110,14 @@ function goToProducts(): void {
 </script>
 
 <template>
-  <section class="flex flex-col gap-6">
+  <section
+    class="flex flex-col gap-6"
+    :aria-busy="status === 'loading' || status === 'idle'"
+  >
     <button
       type="button"
       data-testid="back-to-products-button"
-      class="self-start text-sm font-medium text-slate-600 hover:text-slate-900"
+      class="self-start text-sm font-medium text-slate-600 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
       @click="goToProducts"
     >
       &larr; Back to products
@@ -135,9 +138,12 @@ function goToProducts(): void {
 
     <template v-else-if="product">
       <div class="grid grid-cols-1 gap-8 md:grid-cols-2">
+        <!-- Decorative: the product name is right there as the heading text
+             next to it, so a screen reader announcing this image's name too
+             would just repeat what it's about to read anyway. -->
         <img
           :src="product.thumbnailUrl"
-          :alt="product.name"
+          alt=""
           class="aspect-square w-full rounded-lg object-cover"
         >
 
@@ -167,15 +173,16 @@ function goToProducts(): void {
                 data-testid="quantity-input"
                 type="number"
                 min="1"
-                class="w-20 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                class="w-20 rounded-md border border-slate-300 px-2 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
                 @change="onQuantityChange"
               >
             </div>
             <button
               type="button"
               data-testid="add-to-cart-button"
-              class="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              class="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="isAdding"
+              :aria-label="isAdding ? `Adding ${product.name} to cart` : `Add ${product.name} to cart`"
               @click="onAddToCart"
             >
               {{ isAdding ? 'Adding…' : 'Add to Cart' }}

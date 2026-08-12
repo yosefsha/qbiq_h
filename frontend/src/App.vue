@@ -17,30 +17,46 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-slate-50">
+    <!-- Visually hidden until focused: lets a keyboard user jump past the
+         repeated header nav straight to the view's content, rather than
+         tabbing through "qbiq_h" / "Catalogue" / "Cart" on every page. -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-slate-900 focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-white"
+    >
+      Skip to main content
+    </a>
     <header class="border-b border-slate-200 bg-white">
-      <nav class="mx-auto flex max-w-4xl items-center gap-6 px-4 py-4">
+      <nav
+        class="mx-auto flex max-w-4xl items-center gap-6 px-4 py-4"
+        aria-label="Main"
+      >
         <RouterLink
           to="/"
-          class="text-lg font-bold text-slate-900"
+          class="rounded-sm text-lg font-bold text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
         >
           qbiq_h
         </RouterLink>
         <RouterLink
           to="/"
-          class="text-slate-600 hover:text-slate-900"
+          class="rounded-sm text-slate-600 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
         >
           Catalogue
         </RouterLink>
         <RouterLink
           to="/cart"
-          class="flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
+          class="flex items-center gap-1.5 rounded-sm text-slate-600 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
         >
           Cart
           <CartBadge />
         </RouterLink>
       </nav>
     </header>
-    <main class="mx-auto max-w-4xl px-4 py-8">
+    <main
+      id="main-content"
+      tabindex="-1"
+      class="mx-auto max-w-4xl px-4 py-8 focus:outline-2 focus:outline-offset-4 focus:outline-slate-900"
+    >
       <RouterView />
     </main>
   </div>

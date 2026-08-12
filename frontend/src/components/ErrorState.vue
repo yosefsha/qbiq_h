@@ -45,7 +45,7 @@ function onRetry(): void {
     <button
       v-if="presentation.retryable"
       type="button"
-      class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+      class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-800"
       @click="onRetry"
     >
       Retry

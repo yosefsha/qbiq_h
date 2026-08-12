@@ -237,4 +237,95 @@ describe('CataloguePage', () => {
     const productsCalls = getMock.mock.calls.filter(([path]) => path.startsWith('/products'))
     expect(productsCalls[0]?.[0]).toBe('/products?limit=12&offset=12')
   })
+
+  it('reacts to the URL changing externally, e.g. browser back/forward, not only its own edits', async () => {
+    stubApi(() => Promise.resolve({ ok: true, data: page() }))
+
+    const { router } = await mountCataloguePage()
+    getMock.mockClear()
+
+    // Simulates the browser restoring a query string via back/forward,
+    // rather than the store-driven watcher in CataloguePage.vue pushing it —
+    // exercises the *other* direction of the URL <-> store sync.
+    await router.push('/?category=software')
+    await flushPromises()
+
+    const productsCalls = getMock.mock.calls.filter(([path]) => path.startsWith('/products'))
+    expect(productsCalls[0]?.[0]).toBe('/products?category=software&limit=12&offset=0')
+  })
+
+  it('does not re-issue a request when a URL change parses to the query already in the store, avoiding a URL <-> store loop', async () => {
+    stubApi(() => Promise.resolve({ ok: true, data: page() }))
+
+    const { router } = await mountCataloguePage()
+    getMock.mockClear()
+
+    // `route.query` itself changes here (an explicit limit/offset that
+    // weren't in the URL before), which does fire the URL-driven watcher —
+    // but it parses to exactly the default query already active, so the
+    // loop-guard in CataloguePage.vue must recognise the two already agree
+    // and skip fetching, rather than the URL/store watchers re-triggering
+    // each other indefinitely.
+    await router.push('/?limit=12&offset=0')
+    await flushPromises()
+
+    const productsCalls = getMock.mock.calls.filter(([path]) => path.startsWith('/products'))
+    expect(productsCalls).toHaveLength(0)
+  })
+
+  describe('accessibility', () => {
+    it('associates every filter control with a visible label', async () => {
+      stubApi(() => Promise.resolve({ ok: true, data: page() }))
+
+      const { wrapper } = await mountCataloguePage()
+
+      expect(wrapper.find('label[for="catalogue-name-filter"]').text()).toBe('Search')
+      expect(wrapper.find('label[for="catalogue-category-filter"]').text()).toBe('Category')
+      expect(wrapper.find('label[for="catalogue-sort"]').text()).toBe('Sort by')
+    })
+
+    it('announces the result count through a single polite live region, not left for sighted users only', async () => {
+      stubApi(() => Promise.resolve({ ok: true, data: page({ total: 1 }) }))
+
+      const { wrapper } = await mountCataloguePage()
+
+      const liveRegions = wrapper.findAll('[aria-live="polite"]')
+      expect(liveRegions).toHaveLength(1)
+      expect(liveRegions[0]?.text()).toBe('1 product found.')
+    })
+
+    it('announces plural counts and the empty case through that same region', async () => {
+      stubApi(() => Promise.resolve({ ok: true, data: page({ items: [], total: 0 }) }))
+
+      const { wrapper } = await mountCataloguePage()
+
+      expect(wrapper.get('[aria-live="polite"]').text()).toBe('No products found.')
+    })
+
+    it('leaves the live region empty on error so it does not talk over ErrorState\'s role="alert"', async () => {
+      stubApi(() =>
+        Promise.resolve({
+          ok: false,
+          error: { kind: 'network', message: 'Failed to fetch' },
+        }),
+      )
+
+      const { wrapper } = await mountCataloguePage()
+
+      expect(wrapper.get('[aria-live="polite"]').text()).toBe('')
+      expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    })
+
+    it('every product card is a real link the keyboard can Tab to and activate with Enter', async () => {
+      stubApi(() => Promise.resolve({ ok: true, data: page() }))
+
+      const { wrapper } = await mountCataloguePage()
+
+      const productLinks = wrapper.findAll('a[href^="/products/"]')
+      expect(productLinks).toHaveLength(1)
+      // Real <a> elements are natively focusable and Enter-activating; no
+      // tabindex/role="link" workaround is present or needed.
+      expect(productLinks[0]?.attributes('tabindex')).toBeUndefined()
+    })
+  })
 })
