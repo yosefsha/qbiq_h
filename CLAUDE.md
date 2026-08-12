@@ -45,7 +45,13 @@ gh issue view 4 --repo yosefsha/qbiq_h
 
 All configuration below is production-grade. Infrastructure is defined as code using **AWS CDK (Python)**.
 
-> **Current state:** `infra/` holds `app.py` and four stacks, but no `cdk.json` — the file that points the CDK CLI at `infra/app.py` and is required for any `cdk` command. Nothing here has ever synthesized. Issue INF-03 closes that gap; do not assume any of the infrastructure below exists yet.
+> **Current state:** INF-03 is done — `cdk.json` at the repo root points the CLI at `infra/app.py`, dependencies are pinned in `infra/requirements.txt`, and `cdk synth -c env=staging` / `-c env=prod` both succeed. `infra/` holds `app.py` and four stacks (network, backend, frontend, pipeline); the data stack is still missing (INF-04). Nothing has been deployed, and `account` in `infra/config/*.py` is a placeholder `000000000000` with the corresponding lookup values seeded in `cdk.json` so synthesis works offline — replace both before any `cdk deploy`.
+>
+> ```bash
+> python3 -m venv .venv && .venv/bin/pip install -r infra/requirements.txt
+> source .venv/bin/activate
+> cdk synth -c env=staging
+> ```
 
 ### CDK Project Structure
 ```

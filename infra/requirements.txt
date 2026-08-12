@@ -1,0 +1,20 @@
+# CDK (Python) dependencies for the infrastructure app in this directory.
+# Pinned exactly so that `cdk synth` produces the same template on every machine
+# and in CI. Bump deliberately, never implicitly.
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r infra/requirements.txt
+#   .venv/bin/python -m pip check
+#
+# The CDK CLI itself is a Node package and is not installed from here:
+#   npm install -g aws-cdk@2   (or run it ad hoc with `npx aws-cdk@2`)
+
+aws-cdk-lib==2.264.0
+constructs==10.8.1
+
+# cdk-nag is held at 2.x on purpose. 3.0.x ships an Aspect that aws-cdk-lib
+# 2.264.0 rejects at synth time with
+# "TypeError: aspectApplication.aspect.visit is not a function" — it expects a
+# newer Aspect interface than this aws-cdk-lib exposes. Revisit when cdk-nag 3
+# and aws-cdk-lib agree again.
+cdk-nag==2.38.2

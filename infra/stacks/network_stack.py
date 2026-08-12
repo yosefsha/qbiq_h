@@ -1,5 +1,6 @@
-from aws_cdk import Stack, Tags
+from aws_cdk import Stack
 from aws_cdk import aws_ec2 as ec2
+from cdk_nag import NagSuppressions
 from constructs import Construct
 
 
@@ -45,6 +46,36 @@ class NetworkStack(Stack):
         )
         self.ecs_sg.add_ingress_rule(self.alb_sg, ec2.Port.tcp(8000), "From ALB")
 
-        Tags.of(self).add("Environment", env_config["environment"])
-        Tags.of(self).add("Service", env_config["service_name"])
-        Tags.of(self).add("Owner", env_config["owner"])
+        # Environment/Service/Owner tags are applied once at the App in app.py and
+        # propagate into this stack, so they are deliberately not repeated here.
+
+        NagSuppressions.add_resource_suppressions(
+            self.vpc,
+            [
+                {
+                    "id": "AwsSolutions-VPC7",
+                    "reason": (
+                        "VPC flow logs are not enabled yet. They bill per GB ingested "
+                        "and need a log destination and retention decision that belongs "
+                        "with the observability work, not with the CDK bootstrap. This "
+                        "suppression is a placeholder to be removed when flow logs land."
+                    ),
+                }
+            ],
+            apply_to_children=True,
+        )
+
+        NagSuppressions.add_resource_suppressions(
+            self.alb_sg,
+            [
+                {
+                    "id": "AwsSolutions-EC23",
+                    "reason": (
+                        "Intentional: this is the security group for the internet-facing "
+                        "ALB, which must accept HTTPS from any client. Ingress is limited "
+                        "to TCP 443; the ECS tasks behind it accept traffic only from this "
+                        "security group on port 8000."
+                    ),
+                }
+            ],
+        )

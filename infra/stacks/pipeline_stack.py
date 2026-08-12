@@ -1,8 +1,9 @@
-from aws_cdk import Stack, Tags
+from aws_cdk import Stack
 from aws_cdk import aws_codebuild as codebuild
 from aws_cdk import aws_codepipeline as codepipeline
 from aws_cdk import aws_codepipeline_actions as actions
 from aws_cdk import aws_sns as sns
+from cdk_nag import NagSuppressions
 from constructs import Construct
 
 
@@ -78,9 +79,16 @@ class PipelineStack(Stack):
             ),
         )
 
-        approval_topic = sns.Topic(self, "ApprovalTopic", display_name="Pipeline Approval")
+        # enforce_ssl adds a topic policy denying any Publish over plain HTTP,
+        # which resolves AwsSolutions-SNS3 outright rather than suppressing it.
+        approval_topic = sns.Topic(
+            self,
+            "ApprovalTopic",
+            display_name="Pipeline Approval",
+            enforce_ssl=True,
+        )
 
-        codepipeline.Pipeline(
+        pipeline = codepipeline.Pipeline(
             self,
             "Pipeline",
             stages=[
@@ -127,6 +135,60 @@ class PipelineStack(Stack):
             ],
         )
 
-        Tags.of(self).add("Environment", env_config["environment"])
-        Tags.of(self).add("Service", env_config["service_name"])
-        Tags.of(self).add("Owner", env_config["owner"])
+        # Environment/Service/Owner tags are applied once at the App in app.py and
+        # propagate into this stack, so they are deliberately not repeated here.
+
+        NagSuppressions.add_resource_suppressions(
+            pipeline,
+            [
+                {
+                    "id": "AwsSolutions-S1",
+                    "reason": (
+                        "The artifact bucket is created and owned by the CodePipeline "
+                        "construct. It holds only build artifacts, is not internet "
+                        "reachable, and every write to it is already recorded as a "
+                        "pipeline execution — S3 access logs would add a second bucket "
+                        "and no new information."
+                    ),
+                },
+                {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": (
+                        "Wildcards are in CDK-generated policies for the pipeline and its "
+                        "action roles. They are scoped to this pipeline's own artifact "
+                        "bucket (s3:GetObject*/PutObject/DeleteObject/Abort* on "
+                        "<bucket>/*) and to its own CodeBuild projects; the object keys "
+                        "are generated per execution and therefore cannot be enumerated "
+                        "in advance."
+                    ),
+                },
+            ],
+            apply_to_children=True,
+        )
+
+        for project in (backend_build, frontend_build):
+            NagSuppressions.add_resource_suppressions(
+                project,
+                [
+                    {
+                        "id": "AwsSolutions-CB4",
+                        "reason": (
+                            "Build artifacts are encrypted with the AWS-managed key for "
+                            "CodeBuild. They contain only source code that is already in "
+                            "a repository plus compiled output — no secrets — so a "
+                            "customer-managed KMS key would add key rotation and cost for "
+                            "no additional protection."
+                        ),
+                    },
+                    {
+                        "id": "AwsSolutions-IAM5",
+                        "reason": (
+                            "Wildcards are in the CDK-generated CodeBuild service role: "
+                            "log streams under this project's own log group and report "
+                            "groups under this project's own name. Both are created at "
+                            "build time and cannot be named in advance."
+                        ),
+                    },
+                ],
+                apply_to_children=True,
+            )
