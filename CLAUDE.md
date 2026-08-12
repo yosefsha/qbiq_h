@@ -45,7 +45,7 @@ gh issue view 4 --repo yosefsha/qbiq_h
 
 All configuration below is production-grade. Infrastructure is defined as code using **AWS CDK (Python)**.
 
-> **Current state:** INF-03 is done — `cdk.json` at the repo root points the CLI at `infra/app.py`, dependencies are pinned in `infra/requirements.txt`, and `cdk synth -c env=staging` / `-c env=prod` both succeed. `infra/` holds `app.py` and four stacks (network, backend, frontend, pipeline); the data stack is still missing (INF-04). Nothing has been deployed, and `account` in `infra/config/*.py` is a placeholder `000000000000` with the corresponding lookup values seeded in `cdk.json` so synthesis works offline — replace both before any `cdk deploy`.
+> **Current state:** INF-03 is done — `cdk.json` at the repo root points the CLI at `infra/app.py`, dependencies are pinned in `infra/requirements.txt`, and `cdk synth -c env=staging` / `-c env=prod` both succeed. `infra/` holds `app.py` and five stacks (network, data, backend, frontend, pipeline); INF-04 added the data stack. Nothing has been deployed, and `account` in `infra/config/*.py` is a placeholder `000000000000` with the corresponding lookup values seeded in `cdk.json` so synthesis works offline — replace both before any `cdk deploy`.
 >
 > ```bash
 > python3 -m venv .venv && .venv/bin/pip install -r infra/requirements.txt
@@ -60,7 +60,7 @@ infra/
   stacks/
     __init__.py
     network_stack.py   # VPC, subnets, security groups
-    data_stack.py      # RDS Postgres + ElastiCache for Redis (not yet written — see INF-04)
+    data_stack.py      # RDS Postgres + ElastiCache for Redis
     backend_stack.py   # ECS/Fargate service for FastAPI
     frontend_stack.py  # S3 + CloudFront for Vue SPA
     pipeline_stack.py  # CodePipeline CI/CD
@@ -85,7 +85,7 @@ See [ADR-003](docs/adr/ADR-003-managed-aws-data-tier.md) for the reasoning.
 - Both reachable only from the ECS task security group. Never from the internet.
 - Credentials generated into **Secrets Manager** and injected at task start.
 - Prices are stored and transported as **integer minor units** plus a currency code — never floats, so cart totals are exact integer arithmetic.
-- **Open:** ElastiCache is evictable and every key carries a TTL, so a `volatile-*` policy can evict Carts alongside cache entries. Resolve in INF-04.
+- ElastiCache runs `maxmemory-policy noeviction` with `reserved-memory-percent 25`, because every key carries a TTL and a `volatile-*` policy would evict Carts alongside cache entries. A full node refuses writes loudly instead of discarding state silently; a memory alarm at 75% is the signal to resize or to split cache from state. Resolved in INF-04 — see [ADR-003](docs/adr/ADR-003-managed-aws-data-tier.md).
 
 ### Frontend (Vue SPA on S3 + CloudFront)
 - `npm run build` output deployed to an **S3 bucket** (private, no public access).

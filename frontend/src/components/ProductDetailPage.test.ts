@@ -207,4 +207,63 @@ describe('ProductDetailPage', () => {
     expect(backSpy).toHaveBeenCalledTimes(1)
     expect(pushSpy).not.toHaveBeenCalled()
   })
+
+  describe('accessibility', () => {
+    it('associates the quantity input with a visible label', async () => {
+      vi.spyOn(apiClient, 'get').mockResolvedValue({ ok: true, data: makeProduct() })
+
+      const { wrapper } = await mountPage('1')
+
+      const label = wrapper.get('label[for="quantity"]')
+      expect(label.text()).toBe('Quantity')
+      expect(wrapper.get('#quantity').element.tagName).toBe('INPUT')
+    })
+
+    it("names the product in the Add to Cart button's accessible name, not just \"Add to Cart\"", async () => {
+      vi.spyOn(apiClient, 'get').mockResolvedValue({ ok: true, data: makeProduct({ name: 'Deep Work' }) })
+
+      const { wrapper } = await mountPage('1')
+
+      const button = wrapper.get('[data-testid="add-to-cart-button"]')
+      expect(button.attributes('aria-label')).toBe('Add Deep Work to cart')
+    })
+
+    it('updates the Add to Cart accessible name while the request is in flight', async () => {
+      vi.spyOn(apiClient, 'get').mockResolvedValue({ ok: true, data: makeProduct({ name: 'Deep Work' }) })
+      let resolvePost!: (value: ApiResult<Cart>) => void
+      vi.spyOn(apiClient, 'post').mockReturnValue(
+        new Promise((resolve) => {
+          resolvePost = resolve
+        }),
+      )
+
+      const { wrapper } = await mountPage('1')
+
+      const button = wrapper.get('[data-testid="add-to-cart-button"]')
+      void button.trigger('click')
+      await flushPromises()
+
+      expect(button.attributes('aria-label')).toBe('Adding Deep Work to cart')
+
+      resolvePost({ ok: true, data: makeCart() })
+      await flushPromises()
+    })
+
+    it('marks the product image as decorative, since the name is rendered as visible text beside it', async () => {
+      vi.spyOn(apiClient, 'get').mockResolvedValue({ ok: true, data: makeProduct() })
+
+      const { wrapper } = await mountPage('1')
+
+      expect(wrapper.get('img').attributes('alt')).toBe('')
+    })
+
+    it('marks the "Back to products" control as a real, keyboard-operable button', async () => {
+      vi.spyOn(apiClient, 'get').mockResolvedValue({ ok: true, data: makeProduct() })
+
+      const { wrapper } = await mountPage('1')
+
+      const back = wrapper.get('[data-testid="back-to-products-button"]')
+      expect(back.element.tagName).toBe('BUTTON')
+    })
+  })
 })

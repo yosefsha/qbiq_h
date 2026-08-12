@@ -45,6 +45,22 @@ function onCheckout(): void {
 function onRetry(): void {
   void cartStore.load()
 }
+
+/**
+ * A single polite live region for the cart's overall state, so a
+ * screen-reader user who just added/changed/removed a line (or landed here
+ * fresh) hears a summary without it being read line-by-line. Left empty on
+ * `cartStore.error`: `ErrorState` already renders with `role="alert"`, an
+ * assertive announcement of its own, so this would otherwise talk over it.
+ */
+const cartAnnouncement = computed<string>(() => {
+  if (cartStore.error) return ''
+  if (!cartStore.cart && cartStore.loadPending) return 'Loading your cart…'
+  if (isEmpty.value) return 'Your cart is empty.'
+  if (!cartStore.cart) return ''
+  const count = items.value.reduce((sum, item) => sum + item.quantity, 0)
+  return `${count} item${count === 1 ? '' : 's'} in your cart. Total ${total.value}.`
+})
 </script>
 
 <template>
@@ -60,8 +76,16 @@ function onRetry(): void {
     />
 
     <p
+      aria-live="polite"
+      class="sr-only"
+    >
+      {{ cartAnnouncement }}
+    </p>
+
+    <p
       v-if="!cartStore.cart && cartStore.loadPending"
       class="text-slate-600"
+      aria-busy="true"
     >
       Loading your cart…
     </p>
@@ -79,7 +103,7 @@ function onRetry(): void {
       </p>
       <RouterLink
         to="/"
-        class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+        class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
       >
         Browse the catalogue
       </RouterLink>
@@ -111,7 +135,7 @@ function onRetry(): void {
       <button
         type="button"
         data-test="checkout"
-        class="self-end rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+        class="self-end rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="cartStore.checkoutPending"
         @click="onCheckout"
       >

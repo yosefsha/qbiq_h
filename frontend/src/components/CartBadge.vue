@@ -16,11 +16,18 @@ const itemCount = computed(() => cartStore.itemCount)
 </script>
 
 <template>
-  <span
-    v-if="itemCount > 0"
-    data-test="cart-badge-count"
-    class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1.5 text-xs font-semibold text-white"
-  >
-    {{ itemCount }}
-  </span>
+  <template v-if="itemCount > 0">
+    <span
+      data-test="cart-badge-count"
+      class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1.5 text-xs font-semibold text-white"
+      aria-hidden="true"
+    >
+      {{ itemCount }}
+    </span>
+    <!-- The visible badge above is a bare number with no context of its own;
+         this is the text that actually reaches the accessible name of the
+         "Cart" link it sits inside (see App.vue), e.g. "Cart, 5 items"
+         rather than the ambiguous "Cart 5". -->
+    <span class="sr-only">, {{ itemCount }} {{ itemCount === 1 ? 'item' : 'items' }}</span>
+  </template>
 </template>
