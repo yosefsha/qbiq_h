@@ -5,3 +5,10 @@ pydantic>=2.9.0
 # the import path used by app/logging_config.py. Capped below the next major so
 # a rebuilt image cannot silently pull a release that removes it.
 python-json-logger>=3.1.0,<5.0.0
+
+# Persistence. Pinned here up front so that BE-02, BE-03 and BE-06 can be built
+# in parallel without three branches each editing this file.
+sqlalchemy>=2.0.36,<3.0.0
+alembic>=1.14.0,<2.0.0
+psycopg[binary]>=3.2.0,<4.0.0
+redis>=5.2.0,<7.0.0
