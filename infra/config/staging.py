@@ -3,10 +3,12 @@
 # not a recommendation.
 #
 # STILL A PLACEHOLDER — `domain_name` / `frontend_domain`. No `example.com`
-# hosted zone exists in this account, so the lookup in frontend_stack.py is
-# answered by a fake seeded entry in `cdk.json`. Synthesis succeeds; a real
-# deploy would not. Set a real domain and delete the seeded `hosted-zone:` key
-# before deploying (INF-06).
+# hosted zone exists in this account, which is why `custom_domain_enabled` is
+# False: frontend_stack.py then skips the hosted-zone lookup, the ACM
+# certificate and the Route 53 alias entirely, and the distribution serves on
+# its generated `*.cloudfront.net` name. That is deployable today. Set a real
+# delegated domain here, flip the flag, and the certificate and alias appear —
+# see docs/runbook.md for what stays manual.
 STAGING_CONFIG = {
     "environment": "staging",
     "account": "963352896991",
@@ -15,6 +17,13 @@ STAGING_CONFIG = {
     "owner": "platform-team",
     "domain_name": "example.com",
     "frontend_domain": "staging.example.com",
+    "custom_domain_enabled": False,
+    # Protocol CloudFront uses to reach the ALB on the `/api/*` behavior. It has
+    # to match what the ALB listener actually speaks, or the edge answers 502 and
+    # nothing in the application logs says why. The listener is owned by
+    # backend_stack.py and is HTTP:80 today, for want of an ACM certificate;
+    # flip this to "HTTPS" in the same change that gives it one.
+    "alb_listener_protocol": "HTTP",
     "backend_desired_count": 1,
     "backend_min_tasks": 1,
     "backend_max_tasks": 4,

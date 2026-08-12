@@ -4,11 +4,14 @@
 # accounts before this carries anything of value.
 #
 # STILL A PLACEHOLDER — `domain_name` / `frontend_domain`. No `example.com`
-# hosted zone exists in this account, so `route53.HostedZone.from_lookup` in
-# frontend_stack.py is answered by a fake seeded entry in `cdk.json`. Synthesis
-# therefore succeeds while a real `cdk deploy` would fail against a zone id that
-# does not exist. Set a real domain and delete the seeded `hosted-zone:` key
-# before deploying (INF-06).
+# hosted zone exists in this account, which is why `custom_domain_enabled` is
+# False: frontend_stack.py then skips `route53.HostedZone.from_lookup`, the ACM
+# certificate and the Route 53 alias entirely, and the distribution serves on
+# its generated `*.cloudfront.net` name. Requesting a DNS-validated certificate
+# against a zone that does not exist would synthesize cleanly and never deploy,
+# so the flag stays off until a real delegated domain exists. Set one, flip the
+# flag, and the certificate and alias appear — see docs/runbook.md for what
+# stays manual.
 #
 # `codestar_connection_arn` must be created and authorised by hand in the
 # console — it cannot be provisioned by CDK (INF-07).
@@ -27,6 +30,13 @@ PROD_CONFIG = {
     "owner": "platform-team",
     "domain_name": "example.com",
     "frontend_domain": "app.example.com",
+    "custom_domain_enabled": False,
+    # Protocol CloudFront uses to reach the ALB on the `/api/*` behavior. It has
+    # to match what the ALB listener actually speaks, or the edge answers 502 and
+    # nothing in the application logs says why. The listener is owned by
+    # backend_stack.py and is HTTP:80 today, for want of an ACM certificate;
+    # flip this to "HTTPS" in the same change that gives it one.
+    "alb_listener_protocol": "HTTP",
     "backend_desired_count": 2,
     "backend_min_tasks": 2,
     "backend_max_tasks": 10,
