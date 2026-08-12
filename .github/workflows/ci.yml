@@ -170,6 +170,9 @@ jobs:
         run: npm ci
 
       - name: Lint (eslint)
+        # `npm run lint` carries `--max-warnings 0`. Without it the gate can
+        # never fail: every rule in eslint-plugin-vue's flat/recommended is a
+        # warning, so a file full of violations still exits 0.
         run: npm run lint
 
       - name: Type-check (vue-tsc)
