@@ -88,3 +88,24 @@ export interface ApiParseError {
 export type ApiError = ApiHttpError | ApiNetworkError | ApiParseError
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError }
+
+/**
+ * Lifecycle of a single `apiClient` call driven by `useAsyncRequest`.
+ * `idle` only occurs when a request has not been issued yet (see the
+ * `immediate: false` option).
+ */
+export type AsyncRequestStatus = 'idle' | 'loading' | 'success' | 'error'
+
+/**
+ * The human-facing rendering of an `ApiError`: what to tell the shopper, and
+ * whether offering a retry affordance could plausibly help. A 404 means the
+ * resource doesn't exist — re-issuing the same request will just fail again,
+ * so `retryable` is false. A network failure or a 5xx is often transient, so
+ * `retryable` is true.
+ */
+export interface ErrorPresentation {
+  kind: ApiError['kind']
+  title: string
+  message: string
+  retryable: boolean
+}
