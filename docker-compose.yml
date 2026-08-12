@@ -1,13 +1,20 @@
 name: qbiq-h
 
-# Two profiles:
-#   --profile prod-like  nginx serves the built SPA and path-routes /api to the
-#                        API, so both share one origin. This is the profile that
-#                        exercises the SameSite=Lax session cookie (ADR-001)
-#                        before it ever reaches CloudFront.
-#   --profile dev        Vite dev server with HMR, proxying /api to the API.
+# `docker compose up --build` starts the whole storefront: Postgres, Redis, the
+# migration/seed job, the API, and nginx serving the built SPA. Open
+# http://localhost:${WEB_PORT:-80}.
 #
-# postgres, redis and api carry no profile, so they come up under either.
+# Every service below is profile-less — and therefore on by default — except
+# `web-dev`. nginx serves the built SPA and path-routes /api to the API, so the
+# two share one origin; that is what exercises the SameSite=Lax session cookie
+# (ADR-001) before it ever reaches CloudFront, and it is the shape a reviewer
+# should see first. This used to sit behind a `prod-like` profile, which meant a
+# plain `docker compose up` brought up an API with no storefront in front of it.
+#
+#   --profile dev   adds `web-dev`, the Vite dev server with HMR on
+#                   ${VITE_PORT:-5173}, proxying /api to the API container.
+#                   Use `docker compose up web-dev` to get *only* that plus its
+#                   dependencies, without also running nginx.
 
 services:
   postgres:
@@ -95,7 +102,7 @@ services:
       start_period: 10s
 
   web:
-    profiles: ["prod-like"]
+    # No profile: this is the storefront, and `docker compose up` must serve it.
     build:
       context: ./frontend
     ports:
