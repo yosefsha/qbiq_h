@@ -372,12 +372,55 @@ somebody is working:
   environment first deployed by Actions would come up with an empty catalogue and no
   error to explain it. Either the workflow grows a seed step or seeding moves into the
   migration task's command.
-- **Assets outside `frontend/dist/` cannot survive a deploy.** Both deploy paths run
-  `aws s3 sync frontend/dist/ s3://$BUCKET/ --delete`, so anything uploaded to the bucket
-  by hand is deleted by the next deploy. Product thumbnails live in
-  `frontend/public/assets/thumbnails/` for exactly this reason — Vite copies `public/`
-  into `dist/`, so they ship with the build. Anything that genuinely cannot live in the
-  build needs an `--exclude` on both syncs, in both files, or it will disappear silently.
+- **Uploaded media needs its own bucket, and there is no upload path yet.** Product
+  imagery is twelve generated placeholders today
+  (`scripts/generate_thumbnails.py` → `frontend/public/assets/thumbnails/`), which ship
+  inside the frontend build and are rebuilt from the repository on every deploy. Real
+  imagery — anything an admin *uploads* rather than the repository *generates* — cannot
+  work that way, and the reason is one command:
+
+  ```bash
+  aws s3 sync frontend/dist/ "s3://$BUCKET/" --delete    # deploy-to-aws.sh:443, deploy.yml:408
+  ```
+
+  `--delete` makes the bucket an exact mirror of `frontend/dist/`, so anything in it that
+  the build did not produce is removed — on **every deploy**, not merely on teardown, and
+  no `RemovalPolicy` affects that. `--delete` is not gratuitous: Vite emits
+  content-hashed filenames, so without it every chunk of every past build accumulates
+  forever.
+
+  Two half-measures exist and neither is the answer. Syncing into a prefix
+  (`s3://$BUCKET/app/`) scopes the delete correctly but needs a matching CloudFront
+  `origin_path`, which then prefixes *every* request through that origin. Adding
+  `--exclude` to both syncs works only while the excluded files live outside `dist/`, has
+  to be duplicated in two files, and is one tidy-up away from deleting the whole image
+  library.
+
+  **The shape this wants is a second bucket**, because build output and uploaded media
+  differ in every property that matters:
+
+  | | SPA bucket | media bucket |
+  |---|---|---|
+  | source of truth | a git commit | the upload itself — it exists nowhere else |
+  | deploy behaviour | strict `--delete` mirror | never synced, never mirrored |
+  | who writes | CI / the deploy script | the admin app, at runtime |
+  | removal policy | destroy freely, rebuild with `npm run build` | retain; losing it loses the catalogue's imagery |
+
+  The write path is the sharpest of those. An admin app needs `s3:PutObject`, and
+  granting that on the bucket serving the SPA means a compromised upload path can replace
+  `index.html` — stored XSS on every visitor. A separate bucket keeps that permission
+  nowhere near the JavaScript people execute.
+
+  Serving it stays single-origin (so [ADR-001](docs/adr/ADR-001-server-owned-cart.md) is
+  untouched): a second S3 origin with OAC on the same distribution, plus one behavior on
+  a distinct path — `/media/*` rather than sharing `/assets/*`, so uploaded files and
+  Vite's hashed output can never collide. `Product.thumbnail_url` already holds a plain
+  root-relative string, so pointing it at `/media/…` needs no API or schema change.
+
+  At that point the imagery also leaves git: hundreds of uploaded photos do not belong in
+  a repository, and once they are not in the repository they cannot be in `dist/` — which
+  is what lets the SPA bucket stay a strict mirror rather than something with exceptions
+  carved into it.
 - **The seed reconciles `thumbnail_url` and nothing else.** Re-seeding repairs that one
   field on existing rows; prices, descriptions and reviews are left as they are. A real
   catalogue would need a considered upsert policy rather than one field's worth of
