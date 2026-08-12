@@ -133,6 +133,46 @@ def test_seed_is_idempotent_after_three_runs(session: Session) -> None:
         assert len(product.reviews) == len(seed.reviews)
 
 
+def test_seed_reconciles_thumbnail_url_on_existing_products(session: Session) -> None:
+    """A product that already exists gets its `thumbnail_url` brought back to
+    the seeded value.
+
+    This is the one field the seed reconciles rather than only inserting, and it
+    is the case that matters in practice: the catalogue was seeded once with
+    URLs pointing at a host that does not exist, so every deployed environment
+    holds stale values that an insert-only seed would never repair.
+    """
+    seed_catalogue(session)
+
+    stale = "https://cdn.qbiq.dev/products/deep-work.jpg"
+    product = session.query(Product).filter_by(name=PRODUCT_SEEDS[0].name).one()
+    product.thumbnail_url = stale
+    session.commit()
+
+    seed_catalogue(session)
+
+    session.refresh(product)
+    assert product.thumbnail_url == PRODUCT_SEEDS[0].thumbnail_url
+    # Reconciled in place rather than inserted alongside.
+    assert session.query(Product).count() == len(PRODUCT_SEEDS)
+
+
+def test_seed_leaves_other_edited_fields_alone(session: Session) -> None:
+    """Only `thumbnail_url` is authoritative. A price edited in place survives a
+    re-seed, so running the seeder is not a silent revert of everything else."""
+    seed_catalogue(session)
+
+    product = session.query(Product).filter_by(name=PRODUCT_SEEDS[0].name).one()
+    edited_price = PRODUCT_SEEDS[0].price_minor + 500
+    product.price_minor = edited_price
+    session.commit()
+
+    seed_catalogue(session)
+
+    session.refresh(product)
+    assert product.price_minor == edited_price
+
+
 def test_seed_does_not_duplicate_categories_already_present(session: Session) -> None:
     """A category inserted out-of-band before the seed runs must not be
     duplicated by slug."""

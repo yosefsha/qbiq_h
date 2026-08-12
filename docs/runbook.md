@@ -76,55 +76,54 @@ stack has to exist first. See "The deploy path" below.
 
 Five things, all of which currently block a real deploy.
 
-### 1. The AWS account and the seeded context lookups
+### 1. The AWS account and the context lookups
 
 `infra/config/staging.py` and `infra/config/prod.py` both set `account` to
 `963352896991`, and **staging and production deliberately share it** — a simplification,
 not a recommendation: a misconfigured staging deploy can reach production resources.
 Split the accounts before this carries anything of value.
 
-No credentials on the machine this was set up from can reach that account, so CDK's
-context lookups are **seeded by hand in `cdk.json`** rather than resolved live:
+Context lookups used to be **seeded by hand in `cdk.json`** — a fake hosted-zone id and a
+two-entry AZ list — because no credentials on the machine this was set up from reached
+the account. Both seeds are gone. Lookups now resolve live and cache in
+**`cdk.context.json`**, which is committed so CI synthesizes the same values a developer
+does:
 
 ```jsonc
-"hosted-zone:account=963352896991:domainName=example.com:region=us-east-1": {
-  "Id": "/hostedzone/ZZZZZZZZZZZZZZZZZZZZ",   // fake — this zone does not exist
-  "Name": "example.com."
-},
-"availability-zones:account=963352896991:region=us-east-1": ["us-east-1a", "us-east-1b"]
+"availability-zones:account=963352896991:region=us-east-1": ["us-east-1a", ... ],
+"hosted-zone:account=963352896991:domainName=yossidemo.click:region=us-east-1": {
+  "Id": "/hostedzone/Z03443351PW97OGJ1VSIF",
+  "Name": "yossidemo.click."
+}
 ```
 
-The seeded AZs are what makes offline synthesis work, and they are a placeholder: AZ
-names map to different physical zones per account. Delete that key and re-synth from a
-session that can assume the CDK lookup role in the target account.
+Never hand-write an entry in either file. A forged lookup synthesizes cleanly and fails
+at deploy, which is the worst of both. To re-resolve one, delete its key and re-synth
+from a session that can assume the CDK lookup role in the target account.
 
-The seeded **hosted zone is not read at all today** — `custom_domain_enabled` is `False`
-in both configs, so `frontend_stack.py` never calls `HostedZone.from_lookup`. The seed is
-kept only so that flipping the flag still synthesizes offline; the id
-`ZZZZZZZZZZZZZZZZZZZZ` is fake and must be deleted before a deploy with a real domain.
+### 2. A real domain
 
-### 2. A real domain (optional — the distribution deploys without one)
+**Staging has one.** `domain_name` is `yossidemo.click`, `frontend_domain` is
+`qbiq.yossidemo.click`, and `custom_domain_enabled` is `True`, so `frontend_stack.py`
+resolves the zone, issues a DNS-validated ACM certificate, adds the name to the
+distribution and creates the A-alias record. **Do not create that alias record by hand** —
+the stack owns it, and a pre-existing record collides with what CloudFormation creates.
 
-`domain_name` is `example.com` and `frontend_domain` is `staging.example.com` /
-`app.example.com` — placeholders, and `custom_domain_enabled` is `False`. With the flag
-off, `frontend_stack.py` creates **no hosted-zone lookup, no ACM certificate and no
-Route 53 alias**, and the distribution serves on its generated `*.cloudfront.net` name.
-That is deliberate: a DNS-validated certificate against a zone that does not exist
-synthesizes cleanly and can never deploy, so the certificate is absent rather than
-fabricated. The cost of the flag being off is one suppressed cdk-nag finding —
-`AwsSolutions-CFR4`, because the default CloudFront certificate pins viewer TLS to
-TLSv1 and cannot be given a stronger security policy.
+**Production does not.** `prod.py` still carries `example.com` with the flag off, and
+with it off the distribution serves on its generated `*.cloudfront.net` name and creates
+no lookup, certificate or alias. That costs one suppressed cdk-nag finding —
+`AwsSolutions-CFR4`, because the default CloudFront certificate pins viewer TLS to TLSv1
+and cannot be given a stronger security policy.
 
-Turning it on, and what stays manual:
+Turning it on for an environment that does not have it:
 
 1. **Register or delegate a real domain** and create its public hosted zone in Route 53.
    Neither is done by this CDK app; delegation means updating the NS records at the
    registrar, which is outside AWS entirely.
 2. Set `domain_name` to the zone apex and `frontend_domain` to the host the SPA serves
-   on, in `infra/config/staging.py` and `infra/config/prod.py`, and set
-   `custom_domain_enabled` to `True`.
-3. Delete the seeded `hosted-zone:` key from `cdk.json` and re-synth from a session that
-   can assume the CDK lookup role, so the real zone id is resolved.
+   on, and set `custom_domain_enabled` to `True`.
+3. Re-synth from a session that can assume the CDK lookup role, so the real zone id is
+   resolved and cached into `cdk.context.json`.
 4. `cdk deploy <env>-frontend`. **The certificate stack will sit in `CREATE_IN_PROGRESS`
    until DNS validation completes.** CDK writes the validation CNAME into the hosted zone
    for you, so this resolves itself if the zone really is delegated — and hangs for hours
