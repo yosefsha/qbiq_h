@@ -38,6 +38,13 @@ PipelineStack(
     env_config=env_config,
 )
 
+# Tagging is applied once, at the App, so every stack — including stacks added
+# later by INF-04..INF-07 — inherits it without having to remember to opt in.
+# CDK propagates App-level tags down to every taggable resource in every stack.
+cdk.Tags.of(app).add("Environment", env_config["environment"])
+cdk.Tags.of(app).add("Service", env_config["service_name"])
+cdk.Tags.of(app).add("Owner", env_config["owner"])
+
 cdk.Aspects.of(app).add(AwsSolutionsChecks())
 
 app.synth()

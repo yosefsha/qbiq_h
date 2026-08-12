@@ -1,9 +1,10 @@
-from aws_cdk import Duration, RemovalPolicy, Stack, Tags
+from aws_cdk import Duration, RemovalPolicy, Stack
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ecr as ecr
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_ecs_patterns as ecs_patterns
 from aws_cdk import aws_logs as logs
+from cdk_nag import NagSuppressions
 from constructs import Construct
 
 
@@ -60,6 +61,45 @@ class BackendStack(Stack):
         )
         scaling.scale_on_cpu_utilization("CpuScaling", target_utilization_percent=70)
 
-        Tags.of(self).add("Environment", env_config["environment"])
-        Tags.of(self).add("Service", env_config["service_name"])
-        Tags.of(self).add("Owner", env_config["owner"])
+        # Environment/Service/Owner tags are applied once at the App in app.py and
+        # propagate into this stack, so they are deliberately not repeated here.
+
+        NagSuppressions.add_resource_suppressions(
+            self.service.load_balancer,
+            [
+                {
+                    "id": "AwsSolutions-EC23",
+                    "reason": (
+                        "Intentional: the ALB is internet-facing and must accept client "
+                        "traffic from any address. The tasks behind it are in private "
+                        "subnets and reachable only through this load balancer."
+                    ),
+                },
+                {
+                    "id": "AwsSolutions-ELB2",
+                    "reason": (
+                        "ALB access logs need a dedicated S3 log bucket with its own "
+                        "lifecycle and retention policy, which is not created here. "
+                        "Remove this suppression when that bucket exists."
+                    ),
+                },
+            ],
+            apply_to_children=True,
+        )
+
+        NagSuppressions.add_resource_suppressions(
+            self.service.task_definition.execution_role,
+            [
+                {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": (
+                        "Wildcards here are in the CDK-generated ECS task execution "
+                        "policy: ecr:GetAuthorizationToken is only valid on Resource '*' "
+                        "per the ECR API, and the CloudWatch Logs grant is scoped to this "
+                        "stack's own log group. Neither is written by us and neither can "
+                        "be narrowed further."
+                    ),
+                }
+            ],
+            apply_to_children=True,
+        )
