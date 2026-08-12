@@ -6,5 +6,9 @@
     "us-east-1d",
     "us-east-1e",
     "us-east-1f"
-  ]
+  ],
+  "hosted-zone:account=963352896991:domainName=yossidemo.click:region=us-east-1": {
+    "Id": "/hostedzone/Z03443351PW97OGJ1VSIF",
+    "Name": "yossidemo.click."
+  }
 }

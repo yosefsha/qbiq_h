@@ -2,22 +2,28 @@
 # note in prod.py: this is a simplification to unblock a single-account setup,
 # not a recommendation.
 #
-# STILL A PLACEHOLDER — `domain_name` / `frontend_domain`. No `example.com`
-# hosted zone exists in this account, which is why `custom_domain_enabled` is
-# False: frontend_stack.py then skips the hosted-zone lookup, the ACM
-# certificate and the Route 53 alias entirely, and the distribution serves on
-# its generated `*.cloudfront.net` name. That is deployable today. Set a real
-# delegated domain here, flip the flag, and the certificate and alias appear —
-# see docs/runbook.md for what stays manual.
+# A real domain, at last. `yossidemo.click` is a registered domain with a public
+# hosted zone in this account (Z03443351PW97OGJ1VSIF), which replaces the
+# `example.com` placeholder this file carried while no zone existed.
+#
+# With `custom_domain_enabled` True, frontend_stack.py resolves that zone,
+# issues an ACM certificate for `frontend_domain` validated by DNS records it
+# writes into the zone itself, adds the name to the distribution, and creates
+# the A-alias record pointing at CloudFront. None of that is a manual step —
+# in particular, do not hand-create the alias record, because the stack owns it.
+#
+# The certificate is a plain `acm.Certificate` in this stack, which is only
+# valid for CloudFront because `region` is us-east-1; frontend_stack.py raises
+# at synth if that ever stops being true.
 STAGING_CONFIG = {
     "environment": "staging",
     "account": "963352896991",
     "region": "us-east-1",
     "service_name": "myapp",
     "owner": "platform-team",
-    "domain_name": "example.com",
-    "frontend_domain": "staging.example.com",
-    "custom_domain_enabled": False,
+    "domain_name": "yossidemo.click",
+    "frontend_domain": "qbiq.yossidemo.click",
+    "custom_domain_enabled": True,
     # ONE task in staging, not two. This reverses what INF-05 decided here, and
     # the reversal is deliberate, so the old reasoning is restated rather than
     # deleted: two tasks kept the service off a single AZ and gave a rolling
