@@ -407,6 +407,37 @@ def test_get_product_detail_is_part_of_the_protocol() -> None:
     assert isinstance(repo, ProductRepository)
 
 
+def test_list_categories_is_part_of_the_protocol() -> None:
+    """BE-05 added `list_categories` to `ProductRepository` (see
+    `app/domain/repositories.py`): `GET /api/categories` needs a way to list
+    every category, and validating an inbound `category` filter needs the
+    same list to check an unknown slug against — see `app/api/products.py`.
+
+    `InMemoryRepository` must keep satisfying the extended Protocol, and a
+    plain `hasattr` check makes the Protocol's own contract explicit rather
+    than relying only on `isinstance`, which only checks method *names* are
+    present, not that they behave correctly.
+    """
+    assert hasattr(ProductRepository, "list_categories")
+
+    repo: ProductRepository = InMemoryRepository()
+    assert isinstance(repo, ProductRepository)
+
+
+def test_list_categories_returns_deduplicated_categories_sorted_by_slug() -> None:
+    repository = _repository()
+
+    categories = repository.list_categories()
+
+    assert categories == (COURSES, EBOOKS)
+
+
+def test_list_categories_is_empty_for_an_empty_catalogue() -> None:
+    repository = InMemoryRepository()
+
+    assert repository.list_categories() == ()
+
+
 def test_limit_above_the_maximum_page_size_is_rejected() -> None:
     """An unbounded limit becomes an unbounded scan once this reaches SQL."""
     with pytest.raises(ValueError, match="limit must be <="):

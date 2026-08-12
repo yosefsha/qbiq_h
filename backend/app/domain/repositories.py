@@ -13,7 +13,13 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from app.domain.cart import Cart
-from app.domain.catalog import Product, ProductDetail, ProductPage, ProductQuery
+from app.domain.catalog import (
+    Category,
+    Product,
+    ProductDetail,
+    ProductPage,
+    ProductQuery,
+)
 
 
 @runtime_checkable
@@ -25,6 +31,17 @@ class ProductRepository(Protocol):
 
         Raises:
             UnknownSortKeyError: if `query.sort` names no known ordering.
+        """
+        ...
+
+    def list_categories(self) -> tuple[Category, ...]:
+        """Return every `Category`, deduplicated, in a deterministic order.
+
+        Added for BE-05's `GET /api/categories` and for validating an
+        inbound `category` filter (an unknown slug must 422 rather than
+        silently returning an empty page — see
+        `app.domain.catalog.ProductQuery`). Ordered by `slug` so callers get
+        a stable listing without needing to sort it themselves.
         """
         ...
 

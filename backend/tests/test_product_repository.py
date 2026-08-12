@@ -452,3 +452,34 @@ def test_get_product_detail_returns_none_for_non_numeric_id(
     repository: SqlProductRepository,
 ) -> None:
     assert repository.get_product_detail("abc") is None
+
+
+# -- list_categories (BE-05) -------------------------------------------------
+
+
+def test_list_categories_returns_every_category_ordered_by_slug(
+    session: Session, repository: SqlProductRepository
+) -> None:
+    _make_category(session, "zzz-cat-1", "Zzz Category")
+    _make_category(session, "aaa-cat-1", "Aaa Category")
+    session.commit()
+
+    categories = repository.list_categories()
+    slugs = [category.slug for category in categories]
+
+    # Scoped assertion: other tests and the seed may add categories of their
+    # own, so this checks relative order among the ones this test created
+    # rather than asserting the full list.
+    assert slugs.index("aaa-cat-1") < slugs.index("zzz-cat-1")
+
+
+def test_list_categories_maps_label_column_to_domain_name_field(
+    session: Session, repository: SqlProductRepository
+) -> None:
+    _make_category(session, "mapped-cat-1", "Mapped Category")
+    session.commit()
+
+    categories = repository.list_categories()
+
+    match = next(c for c in categories if c.slug == "mapped-cat-1")
+    assert match.name == "Mapped Category"
