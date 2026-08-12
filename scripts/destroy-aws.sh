@@ -88,33 +88,51 @@ printf '%b========================================%b\n' "$RED" "$NC"
 printf '%bDESTROY — %s (%s / %s)%b\n' "$RED" "$ENVIRONMENT" "$ACTUAL_ACCOUNT" "$AWS_REGION" "$NC"
 printf '%b========================================%b\n\n' "$RED" "$NC"
 
+if [ "$ENVIRONMENT" = "prod" ]; then
 cat <<WARNING
 This deletes the VPC, the ECS service and its load balancer, the CloudFront
-distribution, and the ElastiCache replication group for '${ENVIRONMENT}'.
+distribution, and the ElastiCache replication group for 'prod'.
 
 WHAT SURVIVES, AND KEEPS BILLING YOU:
 
-  * The RDS database. Its removal policy is RETAIN in production and SNAPSHOT in
-    staging (infra/stacks/data_stack.py), so 'cdk destroy' never actually
-    deletes your data:
-      - prod:    the DB instance itself is retained and continues to cost the
-                 full hourly instance price, exactly as if you had not run this.
-                 It also has deletion protection on, so even a manual delete is
-                 refused until you turn that off.
-      - staging: the instance is deleted but a FINAL SNAPSHOT is retained, and
-                 snapshot storage is billed per GB-month for as long as it
-                 exists. It is not free, and nothing here will ever remove it.
-    Deleting either is a deliberate, separate act:
+  * The RDS database. Its removal policy is RETAIN, so 'cdk destroy' never
+    actually deletes your data: the DB instance is retained and continues to
+    cost the full hourly instance price, exactly as if you had not run this.
+    It also has deletion protection on, so even a manual delete is refused
+    until you turn that off.
       aws rds describe-db-instances --query 'DBInstances[].DBInstanceIdentifier'
-      aws rds describe-db-snapshots --snapshot-type manual
 
   * The ECR repository (RETAIN) and every image in it.
   * The S3 bucket holding the built SPA (RETAIN) and its objects.
-  * Any ElastiCache final snapshot, on the same terms as the RDS one.
+  * The ElastiCache replication group (RETAIN).
 
 So "destroyed" here means "the compute and the network are gone". The stateful
 things are still there, still on your bill, and are your call to remove.
 WARNING
+else
+cat <<WARNING
+This deletes EVERYTHING in '${ENVIRONMENT}' — the VPC, the ECS service and its
+load balancer, the CloudFront distribution, and every stateful resource with it.
+
+NOTHING SURVIVES, WHICH IS THE POINT:
+
+  * The RDS instance is deleted outright, with NO final snapshot. Automated
+    backups are off (db_backup_retention_days: 0) and the removal policy is
+    DESTROY, so there is nothing to restore from afterwards.
+  * The ElastiCache replication group goes the same way, and with it every
+    Cart and session it held.
+  * The ECR repository is emptied and deleted, images included.
+  * The S3 bucket holding the built SPA is emptied and deleted.
+
+That is deliberate: ${ENVIRONMENT} is a short-lived demo whose entire contents
+are rebuilt by the next scripts/deploy-to-aws.sh run from the commit being
+deployed. It also means a teardown leaves no orphaned registry, snapshot or
+bucket to collide with — or bill you for — the next deploy.
+
+Any data you put here by hand and care about is gone for good. Production is
+configured the opposite way, and this warning reads differently there.
+WARNING
+fi
 
 CONFIRMATION="destroy ${ENVIRONMENT}"
 printf '\n%bType exactly: %s%b\n' "$YELLOW" "$CONFIRMATION" "$NC"
@@ -129,10 +147,12 @@ fi
 # them in this order means a partial failure stops at the most-dependent stack
 # still standing rather than half way down.
 #
-# `<env>-ecr` is destroyed last and is close to a no-op: the repository is RETAIN,
-# so what goes away is the CloudFormation stack, not the registry or the images.
-# It is included so a re-deploy starts from a clean stack rather than adopting a
-# half-torn-down one.
+# `<env>-ecr` is destroyed last. In production it is close to a no-op — the
+# repository is RETAIN there, so what goes away is the CloudFormation stack, not
+# the registry or the images. Everywhere else the repository is emptied and
+# deleted with the stack, which is what makes the environment redeployable:
+# `repository_name` is fixed, so a registry left behind fails the next deploy's
+# early validation with "identifier '<service>-backend' already exists".
 STACKS=(
     "${ENVIRONMENT}-deploy"
     "${ENVIRONMENT}-frontend"
@@ -159,5 +179,10 @@ done
 printf '\n%b========================================%b\n' "$GREEN" "$NC"
 printf '%bTeardown complete — %s%b\n' "$GREEN" "$ENVIRONMENT" "$NC"
 printf '%b========================================%b\n' "$GREEN" "$NC"
-printf '\n%bThe RDS instance or its final snapshot, the ECR repository and the\n' "$YELLOW"
-printf 'SPA bucket are still there and still billing. See the warning above.%b\n' "$NC"
+if [ "$ENVIRONMENT" = "prod" ]; then
+    printf '\n%bThe RDS instance, the ECR repository and the SPA bucket are still\n' "$YELLOW"
+    printf 'there and still billing. See the warning above.%b\n' "$NC"
+else
+    printf '\n%bNothing is left behind — no instance, no snapshot, no registry, no\n' "$GREEN"
+    printf 'bucket. ./scripts/deploy-to-aws.sh %s rebuilds it from scratch.%b\n' "$ENVIRONMENT" "$NC"
+fi
