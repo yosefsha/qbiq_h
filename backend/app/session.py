@@ -141,8 +141,9 @@ def _set_session_cookie(response: Response, session_id: SessionId) -> None:
 
 #: Request-state attribute carrying the session for `SessionCookieMiddleware`
 #: to write out. Set only by `get_session`, so a route that never asks for a
-#: session — `/health`, hit continuously by the ALB — neither touches Redis
-#: nor receives a cookie.
+#: session — `/health`, hit continuously by the ALB — mints no session and
+#: receives no cookie. (`/health` does reach Redis, but only to `PING` it, and
+#: only until the readiness latch in `app.health` closes.)
 _REQUEST_STATE_ATTR = "session_id"
 
 
