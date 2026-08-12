@@ -133,10 +133,52 @@ frontend/src/
   router/            /, /products/:id, /cart, catch-all
 
 infra/
-  app.py             CDK app; stacks are named <env>-network|backend|frontend|pipeline
-  stacks/            network, backend, frontend, pipeline  (no data stack yet — INF-04)
+  app.py             CDK app; stacks are <env>-network|data|backend|frontend|deploy
+  stacks/            network, data, backend, frontend, deploy
   config/            staging.py, prod.py
+
+.github/workflows/
+  ci.yml             The test gate: ruff, pytest, eslint, vue-tsc, vitest, image builds
+  deploy.yml         Deploy on merge to main (ADR-004)
 ```
+
+## How a merge reaches production
+
+```mermaid
+flowchart LR
+    push["push to main"]
+    ci["ci.yml<br/>ruff · pytest · eslint<br/>vue-tsc · vitest · docker build"]
+    gate["deploy.yml: gate<br/>waits for ci.yml == success<br/>on this exact SHA"]
+    be["deploy.yml: backend<br/>environment: production"]
+    fe["deploy.yml: frontend<br/>environment: production"]
+    mig["one-off ECS task<br/>alembic upgrade head<br/>private subnets, task SG"]
+    svc["ECS service<br/>new revision pinned to :SHA"]
+    s3d["s3 sync dist/ --delete"]
+    inv["CloudFront invalidation /*"]
+
+    push --> ci
+    push --> gate
+    ci -. "conclusion read via the API,<br/>never re-run" .-> gate
+    gate --> be
+    gate --> fe
+    be --> mig --> svc
+    fe --> s3d --> inv
+```
+
+Three things the diagram is drawn to make unmissable:
+
+**1. The test suite runs once.** `deploy.yml` reads `ci.yml`'s conclusion for the same
+commit instead of re-running it. CodePipeline could not do this — it had no view of
+GitHub's checks — so it paid for a second copy of the gate. [ADR-004](adr/ADR-004-github-actions-over-codepipeline.md).
+
+**2. Backend and frontend never wait on each other.** Two jobs off the same gate, no
+`needs` between them.
+
+**3. The migration runs inside the VPC; the runner does not.** RDS admits only the ECS
+task security group, and a GitHub-hosted runner is on the public internet — so
+`alembic upgrade head` runs as a one-off Fargate task from the image being deployed, and
+the service is updated only if that container exited `0`. This is the same shape as
+`migrate` in the local Compose stack.
 
 ## Gap between this diagram and what is deployable today
 
