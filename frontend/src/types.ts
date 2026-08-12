@@ -1,43 +1,51 @@
 /**
  * Shared domain types, matching the language defined in CONTEXT.md.
  *
+ * These mirror the backend's wire format exactly, field for field. They were
+ * originally written from the plan, before BE-05 and BE-07 existed, and had
+ * drifted: prices were nested under a `Money` object, `Category` was keyed by
+ * `id` rather than `slug`, `Review` carried a `productId` and `createdAt` the
+ * API never sends, and `Cart` used `lineItems`/`total` where the API sends
+ * `items`/`totalMinor`. Each shape below is now taken from an actual response.
+ *
  * Prices are always integer minor units (e.g. cents) paired with a currency
- * code — never a float or a formatted string. This keeps money arithmetic
- * exact and matches the backend's wire format.
+ * code — never a float and never a formatted string. Formatting happens once,
+ * at render time, via `Intl.NumberFormat`. The API deliberately sends them
+ * flat (`priceMinor` + `currency`) rather than nested, so these do too:
+ * a wrapper type here would have to be built and unwrapped on every response,
+ * which is exactly the sort of translation layer that lets drift back in.
  */
 
 /** ISO 4217 currency code, e.g. "USD". */
 export type CurrencyCode = string
 
-/** A monetary amount transported as integer minor units plus a currency code. */
-export interface Money {
-  priceMinor: number
-  currency: CurrencyCode
-}
-
-/** The kind of digital good a Product is. Every Product has exactly one. */
+/**
+ * The kind of digital good a Product is. Every Product has exactly one.
+ *
+ * Identified by `slug`, which is what `GET /api/products?category=` accepts —
+ * there is no separate opaque id on the wire.
+ */
 export interface Category {
-  id: string
+  slug: string
   name: string
 }
 
 /** A shopper's written verdict on a Product. */
 export interface Review {
   id: string
-  productId: string
   author: string
   rating: number
   body: string
-  createdAt: string
 }
 
 /** A digital good offered for sale — an e-book, a software licence, or an online course. */
 export interface Product {
   id: string
   name: string
+  priceMinor: number
+  currency: CurrencyCode
   shortDescription: string
   thumbnailUrl: string
-  price: Money
   category: Category
 }
 
@@ -47,17 +55,41 @@ export interface ProductDetail extends Product {
   reviews: Review[]
 }
 
-/** One Product within a Cart, together with the quantity wanted of it. */
-export interface LineItem {
-  product: Product
-  quantity: number
+/** Response body of `GET /api/products`: one page plus its paging state. */
+export interface ProductPage {
+  items: Product[]
+  total: number
+  limit: number
+  offset: number
 }
 
-/** The set of Products a Shopper intends to buy, held on the server and read by the browser. */
+/**
+ * One line of a rendered Cart.
+ *
+ * Flat, not a nested `Product`: the server re-reads the price from the
+ * catalogue on every Cart response, so a line carries the price as of *now*
+ * rather than a snapshot taken when it was added.
+ */
+export interface CartLineItem {
+  productId: string
+  name: string
+  unitPriceMinor: number
+  quantity: number
+  subtotalMinor: number
+}
+
+/**
+ * The set of Products a Shopper intends to buy — held on the server (ADR-001)
+ * and only mirrored here.
+ *
+ * `totalMinor` is the server's own integer sum. Never recompute it in the
+ * browser: the displayed total must be the total the server returned, or the
+ * two can disagree.
+ */
 export interface Cart {
-  id: string
-  lineItems: LineItem[]
-  total: Money
+  items: CartLineItem[]
+  totalMinor: number
+  currency: CurrencyCode
 }
 
 /**

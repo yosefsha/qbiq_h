@@ -115,5 +115,11 @@ export const apiClient = {
   put: <T>(path: string, body?: unknown): Promise<ApiResult<T>> =>
     request<T>(path, { method: 'PUT', body: toJsonBody(body) }),
 
+  // Required by `PATCH /api/cart/items/{productId}`, the only way to change a
+  // line's quantity. Its absence would have forced the cart store to reach for
+  // `fetch` directly, which this module exists to prevent.
+  patch: <T>(path: string, body?: unknown): Promise<ApiResult<T>> =>
+    request<T>(path, { method: 'PATCH', body: toJsonBody(body) }),
+
   delete: <T>(path: string): Promise<ApiResult<T>> => request<T>(path, { method: 'DELETE' }),
 }
