@@ -11,6 +11,7 @@ import pytest
 
 from app.domain.cart import Cart, LineItem
 from app.domain.catalog import (
+    MAX_PAGE_SIZE,
     Category,
     Product,
     ProductDetail,
@@ -391,3 +392,26 @@ def test_carts_are_isolated_per_session() -> None:
     cart_b = repository.get_cart("session-b")
 
     assert cart_b.items == ()
+
+
+def test_get_product_detail_is_part_of_the_protocol() -> None:
+    """BE-05's detail route must reach reviews without downcasting.
+
+    Reachable only on the concrete fake, `ProductDetail` forced callers to
+    either isinstance-check the result of `get_product` or annotate against
+    the fake — both of which defeat the storage-agnostic boundary.
+    """
+    assert hasattr(ProductRepository, "get_product_detail")
+
+    repo: ProductRepository = InMemoryRepository()
+    assert isinstance(repo, ProductRepository)
+
+
+def test_limit_above_the_maximum_page_size_is_rejected() -> None:
+    """An unbounded limit becomes an unbounded scan once this reaches SQL."""
+    with pytest.raises(ValueError, match="limit must be <="):
+        ProductQuery(limit=MAX_PAGE_SIZE + 1)
+
+
+def test_limit_at_the_maximum_page_size_is_allowed() -> None:
+    assert ProductQuery(limit=MAX_PAGE_SIZE).limit == MAX_PAGE_SIZE
