@@ -115,8 +115,23 @@ class DataStack(Stack):
         self.database = rds.DatabaseInstance(
             self,
             "Database",
+            # 16.10, not 16.8. RDS retires minor versions, and 16.8 is no longer
+            # offered in this account or region — `cdk deploy` failed with
+            # "Cannot find version 16.8 for postgres" after the network stack had
+            # already been created. The CDK enum still carries VER_16_8 because
+            # it lists versions AWS has ever published, not versions orderable
+            # today, so synth cannot catch this.
+            #
+            # This also explains the synth warning INF-04 recorded as a stale
+            # validator false alarm — "DBInstanceClass db.t4g.micro is not valid
+            # for EngineVersion 16.8". It was accurate: that combination has
+            # zero orderable options. 16.10 and 16.9 both have four.
+            #
+            # Check before changing:
+            #   aws rds describe-orderable-db-instance-options --engine postgres \
+            #     --engine-version <v> --db-instance-class <class>
             engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_16_8
+                version=rds.PostgresEngineVersion.VER_16_10
             ),
             instance_type=ec2.InstanceType(env_config["db_instance_type"]),
             vpc=vpc,
