@@ -6,3 +6,11 @@ cdk.out/
 
 # Agent worktrees
 .claude/worktrees/
+
+# Frontend (Vite + Vue)
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+.env.*.local
