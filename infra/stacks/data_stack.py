@@ -115,23 +115,32 @@ class DataStack(Stack):
         self.database = rds.DatabaseInstance(
             self,
             "Database",
-            # 16.10, not 16.8. RDS retires minor versions, and 16.8 is no longer
-            # offered in this account or region — `cdk deploy` failed with
-            # "Cannot find version 16.8 for postgres" after the network stack had
-            # already been created. The CDK enum still carries VER_16_8 because
-            # it lists versions AWS has ever published, not versions orderable
-            # today, so synth cannot catch this.
+            # The major version is pinned; the minor deliberately is not. RDS
+            # retires minor versions, and a pinned one eventually stops being
+            # orderable: `cdk deploy` failed with "Cannot find version 16.8 for
+            # postgres" after the network stack had already been created, and
+            # rolled the whole data tier back. Synth cannot catch that, because
+            # the CDK enum lists every version AWS has ever published rather
+            # than the ones orderable today — VER_16_8 still exists in the enum.
+            #
+            # VER_16 is the major-only enum member — it renders
+            # EngineVersion: "16", which RDS resolves to the current default
+            # 16.x at create time (16.13 as of this writing). With
+            # auto_minor_version_upgrade below, the instance then tracks minors
+            # on its own and this cannot go stale again. Chasing the pin (16.8
+            # -> 16.10 -> ...) only defers the same failure.
             #
             # This also explains the synth warning INF-04 recorded as a stale
             # validator false alarm — "DBInstanceClass db.t4g.micro is not valid
             # for EngineVersion 16.8". It was accurate: that combination has
-            # zero orderable options. 16.10 and 16.9 both have four.
+            # zero orderable options.
             #
-            # Check before changing:
+            # Moving to a new *major* is a separate, deliberate decision — major
+            # upgrades are manual and one-way. Check what is offered first:
             #   aws rds describe-orderable-db-instance-options --engine postgres \
             #     --engine-version <v> --db-instance-class <class>
             engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_16_10
+                version=rds.PostgresEngineVersion.VER_16
             ),
             instance_type=ec2.InstanceType(env_config["db_instance_type"]),
             vpc=vpc,

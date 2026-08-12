@@ -18,12 +18,14 @@
 # side: the `production` environment's required reviewers and deployment-branch
 # policy, and the `AWS_ACCOUNT_ID` repository variable — see docs/runbook.md.
 #
-# Context lookups (availability zones, hosted zone) are SEEDED in cdk.json
-# rather than resolved live, because no credentials on the machine this was set
-# up from reach this account. The seeded AZs are us-east-1a/1b. Delete those
-# seeds and re-synth from a session that can assume the CDK lookup role in this
-# account to replace them with real values — AZ names map to different physical
-# zones per account, so the seeds are a placeholder, not a fact.
+# Context lookups used to be SEEDED by hand in cdk.json, because no credentials
+# on the machine this was set up from reached this account. Both seeds are gone:
+# availability zones now resolve live and are cached in cdk.context.json (commit
+# that file — it is what keeps CI synthing the same values), and the hosted-zone
+# seed was a forged zone id for a domain nobody owns, read only when
+# `custom_domain_enabled` is True, which it is not in either environment.
+# Turning that flag on means owning a real domain and letting
+# `HostedZone.from_lookup` resolve it — never re-seeding a value by hand.
 PROD_CONFIG = {
     "environment": "prod",
     "account": "963352896991",

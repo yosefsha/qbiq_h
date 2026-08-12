@@ -101,14 +101,6 @@
     "@aws-cdk/core:validateSnapshotRemovalPolicy": true,
     "@aws-cdk/custom-resources:logApiResponseDataPropertyTrueDefault": false,
     "@aws-cdk/customresources:installLatestAwsSdkDefault": false,
-    "@aws-cdk/s3-notifications:addS3TrustKeyPolicyForSnsSubscriptions": true,
-    "hosted-zone:account=963352896991:domainName=example.com:region=us-east-1": {
-      "Id": "/hostedzone/ZZZZZZZZZZZZZZZZZZZZ",
-      "Name": "example.com."
-    },
-    "availability-zones:account=963352896991:region=us-east-1": [
-      "us-east-1a",
-      "us-east-1b"
-    ]
+    "@aws-cdk/s3-notifications:addS3TrustKeyPolicyForSnsSubscriptions": true
   }
 }
