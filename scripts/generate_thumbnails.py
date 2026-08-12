@@ -89,6 +89,29 @@ THUMBNAILS: tuple[Thumbnail, ...] = (
     Thumbnail("vue3-typescript-course", "online-courses", "Course", "VUE"),
     Thumbnail("aws-cdk-course", "online-courses", "Course", "AWS"),
     Thumbnail("sql-for-developers-course", "online-courses", "Course", "SQL"),
+    # The twenty below exist so the catalogue is worth paging through: the
+    # storefront asks for 12 per page, so twelve products never render a second
+    # page. See the matching comment in backend/app/seed.py.
+    Thumbnail("refactoring-field-guide", "e-books", "E-Book", "RF"),
+    Thumbnail("distributed-systems-impatient", "e-books", "E-Book", "DS"),
+    Thumbnail("debugging-systematic", "e-books", "E-Book", "DB"),
+    Thumbnail("designing-data-contracts", "e-books", "E-Book", "DC"),
+    Thumbnail("pragmatic-code-reviewer", "e-books", "E-Book", "CR"),
+    Thumbnail("observability-first-principles", "e-books", "E-Book", "OB"),
+    Thumbnail("writing-for-engineers", "e-books", "E-Book", "WE"),
+    Thumbnail("querylens-profiler", "software-licences", "Licence", "QL"),
+    Thumbnail("sentinel-log-viewer", "software-licences", "Licence", "SL"),
+    Thumbnail("cascade-diagram-studio", "software-licences", "Licence", "CD"),
+    Thumbnail("payload-api-client", "software-licences", "Licence", "PA"),
+    Thumbnail("bastion-secrets-manager", "software-licences", "Licence", "BS"),
+    Thumbnail("meridian-load-tester", "software-licences", "Licence", "ML"),
+    Thumbnail("atlas-schema-migrator", "software-licences", "Licence", "AS"),
+    Thumbnail("docker-compose-course", "online-courses", "Course", "DKR"),
+    Thumbnail("testing-python-course", "online-courses", "Course", "TST"),
+    Thumbnail("system-design-workshop", "online-courses", "Course", "SYS"),
+    Thumbnail("terraform-production-course", "online-courses", "Course", "TF"),
+    Thumbnail("redis-patterns-course", "online-courses", "Course", "RDS"),
+    Thumbnail("accessible-frontend-course", "online-courses", "Course", "A11Y"),
 )
 
 
