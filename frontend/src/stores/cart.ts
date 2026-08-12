@@ -14,8 +14,7 @@
  * Scope note: this is the shared skeleton, added ahead of FE-02/FE-03/FE-04
  * so the detail page's Add to Cart and the cart view code against one store
  * rather than each inventing its own. FE-04 owns it from here and is expected
- * to extend it — optimistic updates with rollback, per-action pending state
- * finer than the single `pending` flag below, and the mock checkout.
+ * to extend it — optimistic updates with rollback and the mock checkout.
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -30,8 +29,22 @@ export const useCartStore = defineStore('cart', () => {
   /** The last `CartView` the server returned, or `undefined` before the first load. */
   const cart = ref<Cart | undefined>(undefined)
 
-  /** True while any Cart request is in flight. */
-  const pending = ref(false)
+  /** True while the initial `GET /api/cart` is in flight. */
+  const loadPending = ref(false)
+
+  /**
+   * Whether a per-line request is in flight, keyed by `productId`.
+   *
+   * Keyed rather than a single store-wide flag, deliberately: with one flag,
+   * changing one line's quantity disables every other line's controls, and the
+   * product detail page's Add to Cart button would be disabled by a request it
+   * has nothing to do with. Read it as `itemPending[productId] === true`.
+   */
+  const itemPending = ref<Record<string, boolean>>({})
+
+  function setItemPending(productId: string, value: boolean): void {
+    itemPending.value = { ...itemPending.value, [productId]: value }
+  }
 
   /** The failure from the most recent action, cleared when the next one starts. */
   const error = ref<ApiError | undefined>(undefined)
@@ -53,24 +66,36 @@ export const useCartStore = defineStore('cart', () => {
     return result
   }
 
-  async function run(request: () => Promise<ApiResult<Cart>>): Promise<ApiResult<Cart>> {
-    pending.value = true
+  /** Runs a request that concerns one line, tracking pending state for it alone. */
+  async function runForItem(
+    productId: string,
+    request: () => Promise<ApiResult<Cart>>,
+  ): Promise<ApiResult<Cart>> {
+    setItemPending(productId, true)
     error.value = undefined
     try {
       return apply(await request())
     } finally {
-      pending.value = false
+      setItemPending(productId, false)
     }
   }
 
   /** Loads the Cart for the current session. Safe to call on a cold session. */
-  function load(): Promise<ApiResult<Cart>> {
-    return run(() => apiClient.get<Cart>(CART_PATH))
+  async function load(): Promise<ApiResult<Cart>> {
+    loadPending.value = true
+    error.value = undefined
+    try {
+      return apply(await apiClient.get<Cart>(CART_PATH))
+    } finally {
+      loadPending.value = false
+    }
   }
 
   /** Adds `quantity` of `productId`. Quantity must be >= 1; the API 422s otherwise. */
   function addItem(productId: string, quantity = 1): Promise<ApiResult<Cart>> {
-    return run(() => apiClient.post<Cart>(`${CART_PATH}/items`, { productId, quantity }))
+    return runForItem(productId, () =>
+      apiClient.post<Cart>(`${CART_PATH}/items`, { productId, quantity }),
+    )
   }
 
   /**
@@ -80,17 +105,17 @@ export const useCartStore = defineStore('cart', () => {
    * the API returns 422 for a `PATCH` to 0 rather than treating it as a delete.
    */
   function setQuantity(productId: string, quantity: number): Promise<ApiResult<Cart>> {
-    return run(() =>
+    return runForItem(productId, () =>
       apiClient.patch<Cart>(`${CART_PATH}/items/${encodeURIComponent(productId)}`, { quantity }),
     )
   }
 
   /** Removes a line entirely. A no-op on the server if it was not present. */
   function removeItem(productId: string): Promise<ApiResult<Cart>> {
-    return run(() =>
+    return runForItem(productId, () =>
       apiClient.delete<Cart>(`${CART_PATH}/items/${encodeURIComponent(productId)}`),
     )
   }
 
-  return { cart, pending, error, load, addItem, setQuantity, removeItem }
+  return { cart, loadPending, itemPending, error, load, addItem, setQuantity, removeItem }
 })
