@@ -1,5 +1,18 @@
 <script setup lang="ts">
 // Root component: layout shell only. Feature views own their own content.
+import { onMounted } from 'vue'
+
+import CartBadge from './components/CartBadge.vue'
+import { useCartStore } from './stores/cart'
+
+const cartStore = useCartStore()
+
+onMounted(() => {
+  // The one place the Cart is loaded eagerly, so the header badge, CartPage,
+  // and the product detail page's Add to Cart all start from the same
+  // server response instead of each issuing their own `/api/cart` request.
+  void cartStore.load()
+})
 </script>
 
 <template>
@@ -20,9 +33,10 @@
         </RouterLink>
         <RouterLink
           to="/cart"
-          class="text-slate-600 hover:text-slate-900"
+          class="flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
         >
           Cart
+          <CartBadge />
         </RouterLink>
       </nav>
     </header>
