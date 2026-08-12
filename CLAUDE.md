@@ -45,7 +45,7 @@ gh issue view 4 --repo yosefsha/qbiq_h
 
 All configuration below is production-grade. Infrastructure is defined as code using **AWS CDK (Python)**.
 
-> **Current state:** INF-03 is done — `cdk.json` at the repo root points the CLI at `infra/app.py`, dependencies are pinned in `infra/requirements.txt`, and `cdk synth -c env=staging` / `-c env=prod` both succeed. `infra/` holds `app.py` and five stacks (network, data, backend, frontend, pipeline); INF-04 added the data stack. Nothing has been deployed, and `account` in `infra/config/*.py` is a placeholder `000000000000` with the corresponding lookup values seeded in `cdk.json` so synthesis works offline — replace both before any `cdk deploy`.
+> **Current state:** INF-03 is done — `cdk.json` at the repo root points the CLI at `infra/app.py`, dependencies are pinned in `infra/requirements.txt`, and `cdk synth -c env=staging` / `-c env=prod` both succeed. `infra/` holds `app.py` and five stacks (network, data, backend, frontend, deploy); INF-04 added the data stack, and INF-07 replaced the pipeline stack with the deploy stack ([ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md)). Nothing has been deployed, and the hosted-zone and availability-zone lookups in `cdk.json` are seeded by hand so synthesis works offline — replace them before any `cdk deploy`.
 >
 > ```bash
 > python3 -m venv .venv && .venv/bin/pip install -r infra/requirements.txt
@@ -63,7 +63,7 @@ infra/
     data_stack.py      # RDS Postgres + ElastiCache for Redis
     backend_stack.py   # ECS/Fargate service for FastAPI
     frontend_stack.py  # S3 + CloudFront for Vue SPA
-    pipeline_stack.py  # CodePipeline CI/CD
+    deploy_stack.py    # GitHub OIDC provider + the deploy role Actions assumes
   config/
     prod.py            # Production environment config
     staging.py         # Staging environment config
@@ -96,18 +96,20 @@ See [ADR-003](docs/adr/ADR-003-managed-aws-data-tier.md) for the reasoning.
 - Enable CloudFront Functions or Lambda@Edge for SPA routing (return `index.html` for 404s).
 - **An `/api/*` cache behavior routes to the ALB**, forwarding cookies and query strings. This keeps the SPA and API on one origin, which is what allows the session cookie to stay `SameSite=Lax` rather than being weakened to `None` ([ADR-001](docs/adr/ADR-001-server-owned-cart.md)). Note S3 and CloudFront are edge services and are **not** in the VPC — only ECS, RDS, and ElastiCache share that boundary.
 
-### CI/CD Pipeline (CodePipeline + CodeBuild)
-- Source: GitHub connection via **CodeStar Connections**.
-- Pipeline stages: **Source → Build → Deploy-Staging → Manual Approval → Deploy-Prod**.
-- Backend build (CodeBuild):
-  1. `pip install -r requirements.txt && pytest` — fail the build on test failure.
-  2. Docker build and push to ECR.
-  3. Update ECS service (rolling deployment, `minimumHealthyPercent: 100`, `maximumPercent: 200`).
-- Frontend build (CodeBuild):
-  1. `npm ci && npm run lint && npm run build` — fail on lint or type errors.
-  2. `aws s3 sync dist/ s3://<bucket> --delete`
-  3. CloudFront cache invalidation on `/*`.
-- Separate CodeBuild projects for backend and frontend — they deploy independently.
+### CI/CD (GitHub Actions + OIDC)
+
+See [ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md) for why this is GitHub Actions and not CodePipeline + CodeBuild, and for what is lost by it.
+
+- **Test gate:** `.github/workflows/ci.yml` — ruff, pytest against real Postgres and Redis, eslint, `vue-tsc`, vitest, and a build of both images. It runs on every pull request and every push to `main`, and it is the *only* place the suite runs.
+- **Deploy:** `.github/workflows/deploy.yml`, on push to `main` and on `workflow_dispatch` (which takes a `target` of `production` or `staging`). Three jobs:
+  - `gate` — resolves the target and blocks until `ci.yml` has concluded `success` for this exact commit. Nothing deploys otherwise, and the suite is not re-run here.
+  - `backend` — build the image, tag it with the **commit SHA**, push to ECR; register a task-definition revision pinned to that tag; run `alembic upgrade head` as a **one-off ECS task** in the private subnets with the task security group, wait for it to stop and fail on a non-zero container exit code; then update the ECS service to the new revision (rolling, `minimumHealthyPercent: 100` / `maximumPercent: 200`, waiting for stability).
+  - `frontend` — `npm ci && npm run lint && npm run build`, `aws s3 sync dist/ --delete`, CloudFront invalidation on `/*`.
+- **Backend and frontend deploy independently** — neither job `needs` the other.
+- **Production gate:** the deploy jobs declare a GitHub `environment`, which is where the required-reviewer rule lives. The workflow declares it; **a human must configure its reviewers and its deployment-branch policy in repository settings** — see `docs/runbook.md`.
+- **No AWS credential is stored anywhere.** `permissions: id-token: write` gets a short-lived OIDC token; `infra/stacks/deploy_stack.py` holds the `token.actions.githubusercontent.com` provider and a least-privilege role whose trust is scoped to this repository and one GitHub environment, and whose policy names this environment's ECR repository, ECS service, task roles, bucket and distribution — never `*`.
+- The workflow reads the cluster, service, task-definition families, subnets, security group, bucket and distribution id from the deploy stack's `CfnOutput`s at run time. No ARN is hardcoded in YAML.
+- Migrations run from the image being deployed, never from the runner: a GitHub-hosted runner cannot reach RDS in a private subnet, and this is the only thing in the project that needed CodeBuild's VPC attachment.
 
 ### Networking
 - **VPC** with public and private subnets across 2+ AZs.
@@ -125,4 +127,4 @@ See [ADR-003](docs/adr/ADR-003-managed-aws-data-tier.md) for the reasoning.
 - All environment-specific values (domain names, instance counts, feature flags) defined in `infra/config/` Python files — not hardcoded in stacks.
 - CDK stacks accept an `env_config` parameter to swap between staging and production.
 - Tag all resources with `Environment`, `Service`, and `Owner` tags.
-- Enable **CDK Nag** (`cdk-nag`) in the pipeline to enforce AWS best practices and catch security issues before deployment.
+- Enable **CDK Nag** (`cdk-nag`) as an App-level Aspect, so a rule violation fails `cdk synth` rather than review. Every suppression carries a written reason in the stack that owns it.

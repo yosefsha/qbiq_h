@@ -73,8 +73,24 @@ STAGING_CONFIG = {
     # staging unable to exercise the property ADR-003 chose Redis for.
     "cache_replicas": 1,
     "cache_snapshot_retention_days": 1,
+    # Deploys come from GitHub Actions over OIDC, not from CodePipeline — see
+    # ADR-004. These three keys are the whole of what the deploy role trusts.
     "github_owner": "yosefsha",
     "github_repo": "qbiq_h",
+    # Deployment branch. The trust policy cannot enforce it (one OIDC token
+    # carries one `sub`, and a job that declares an environment stops presenting
+    # the ref), so this value is what the GitHub environment's deployment-branch
+    # policy must be set to by hand — see docs/runbook.md.
     "github_branch": "main",
-    "codestar_connection_arn": "REPLACE_WITH_CODESTAR_CONNECTION_ARN",
+    # The GitHub *environment* whose name appears in the OIDC subject claim:
+    # `repo:yosefsha/qbiq_h:environment:staging`. It must match the `environment:`
+    # key on the staging jobs in .github/workflows/deploy.yml, or the role refuses
+    # the assume with an unhelpful "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+    "github_environment": "staging",
+    # An IAM OIDC provider is account-global and staging shares an account with
+    # production, so exactly one environment may create it. Staging does, and
+    # `prod-deploy` imports it by its (fully determined) ARN — which means
+    # `staging-deploy` has to be deployed first. Split the accounts and both
+    # environments set this to True.
+    "create_github_oidc_provider": True,
 }

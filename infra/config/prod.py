@@ -13,8 +13,10 @@
 # flag, and the certificate and alias appear — see docs/runbook.md for what
 # stays manual.
 #
-# `codestar_connection_arn` must be created and authorised by hand in the
-# console — it cannot be provisioned by CDK (INF-07).
+# Deploys run from GitHub Actions over OIDC (ADR-004), so there is no CodeStar
+# connection to authorise by hand any more. What replaced it is on the GitHub
+# side: the `production` environment's required reviewers and deployment-branch
+# policy, and the `AWS_ACCOUNT_ID` repository variable — see docs/runbook.md.
 #
 # Context lookups (availability zones, hosted zone) are SEEDED in cdk.json
 # rather than resolved live, because no credentials on the machine this was set
@@ -76,8 +78,26 @@ PROD_CONFIG = {
     "cache_node_type": "cache.t4g.small",
     "cache_replicas": 2,
     "cache_snapshot_retention_days": 7,
+    # Deploys come from GitHub Actions over OIDC, not from CodePipeline — see
+    # ADR-004. These keys are the whole of what the deploy role trusts.
     "github_owner": "yosefsha",
     "github_repo": "qbiq_h",
+    # Deployment branch. The trust policy cannot enforce it (one OIDC token
+    # carries one `sub`, and a job that declares an environment stops presenting
+    # the ref), so this value is what the GitHub environment's deployment-branch
+    # policy must be set to by hand — see docs/runbook.md.
     "github_branch": "main",
-    "codestar_connection_arn": "REPLACE_WITH_CODESTAR_CONNECTION_ARN",
+    # The GitHub *environment* whose name appears in the OIDC subject claim:
+    # `repo:yosefsha/qbiq_h:environment:production`. It must match the
+    # `environment:` key on the production jobs in
+    # .github/workflows/deploy.yml. This is also where the human gate lives: the
+    # required-reviewer rule is a property of the GitHub environment, not of the
+    # workflow, so it has to be configured in repository settings — the workflow
+    # can declare the environment but cannot create its protection rules.
+    "github_environment": "production",
+    # False: an IAM OIDC provider is account-global and this account is shared
+    # with staging, which creates it. `prod-deploy` imports it by its ARN, so
+    # `staging-deploy` must be deployed first. Split the accounts and this
+    # becomes True.
+    "create_github_oidc_provider": False,
 }
