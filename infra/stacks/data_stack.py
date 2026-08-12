@@ -168,9 +168,12 @@ class DataStack(Stack):
             multi_az=env_config["db_multi_az"],
             deletion_protection=env_config["db_deletion_protection"],
             auto_minor_version_upgrade=True,
-            # Production keeps the instance if the stack is deleted; staging is
-            # allowed to go away, but only after a final snapshot.
-            removal_policy=RemovalPolicy.RETAIN if is_production else RemovalPolicy.SNAPSHOT,
+            # Production keeps the instance if the stack is deleted. Staging is
+            # destroyed outright — SNAPSHOT here meant every teardown left a
+            # billed final snapshot behind and made `cdk destroy` slow, and the
+            # deploy/destroy cycle is meant to be routine in a demo environment
+            # whose only state is what migrations and seeds put there.
+            removal_policy=RemovalPolicy.RETAIN if is_production else RemovalPolicy.DESTROY,
         )
 
         #: The generated secret. `DatabaseInstance.secret` is Optional in the
@@ -263,10 +266,15 @@ class DataStack(Stack):
             cache_node_type=env_config["cache_node_type"],
             # One primary plus the configured number of replicas, in a single
             # shard. Automatic failover is the whole reason ADR-003 chose this
-            # engine, and it needs at least one replica to fail over to.
+            # engine, and it needs at least one replica to fail over to — so both
+            # failover and Multi-AZ are derived from the replica count rather
+            # than hardcoded on. ElastiCache rejects either one on a
+            # single-node group, which is what a zero-replica environment is.
+            # Staging runs at zero for cost (infra/config/staging.py);
+            # production keeps its replica and therefore keeps failover.
             num_cache_clusters=env_config["cache_replicas"] + 1,
-            automatic_failover_enabled=True,
-            multi_az_enabled=True,
+            automatic_failover_enabled=env_config["cache_replicas"] > 0,
+            multi_az_enabled=env_config["cache_replicas"] > 0,
             cache_subnet_group_name=cache_subnet_group.ref,
             cache_parameter_group_name=cache_parameter_group.ref,
             security_group_ids=[self.cache_security_group.security_group_id],
@@ -279,8 +287,10 @@ class DataStack(Stack):
             snapshot_retention_limit=env_config["cache_snapshot_retention_days"],
             auto_minor_version_upgrade=True,
         )
+        # Same reasoning as the database above: production retains, staging is
+        # destroyed without a final snapshot.
         self.cache.apply_removal_policy(
-            RemovalPolicy.RETAIN if is_production else RemovalPolicy.SNAPSHOT
+            RemovalPolicy.RETAIN if is_production else RemovalPolicy.DESTROY
         )
 
         # `noeviction` only pays off if someone notices the node filling up:
@@ -362,9 +372,11 @@ class DataStack(Stack):
         # Environment/Service/Owner tags are applied once at the App in app.py and
         # propagate into this stack, so they are deliberately not repeated here.
 
-        self._suppress_nag_findings(is_production=is_production)
+        self._suppress_nag_findings(
+            is_production=is_production, cache_replicas=env_config["cache_replicas"]
+        )
 
-    def _suppress_nag_findings(self, is_production: bool) -> None:
+    def _suppress_nag_findings(self, is_production: bool, cache_replicas: int) -> None:
         # By path, not by construct. `DatabaseInstance.secret` is the
         # `SecretTargetAttachment`, not the `DatabaseSecret` underneath it, so
         # suppressing on `self.database_secret` annotates the attachment and the
@@ -437,12 +449,46 @@ class DataStack(Stack):
                         "id": "AwsSolutions-RDS10",
                         "reason": (
                             "Staging is intended to be destroyable, and deletion protection "
-                            "would require a console step before every teardown. The "
-                            "removal policy is still SNAPSHOT, so a delete leaves a final "
-                            "snapshot behind. Production sets db_deletion_protection=True "
-                            "in infra/config/prod.py."
+                            "would require a console step before every teardown. The removal "
+                            "policy is DESTROY here, so a delete leaves nothing behind at "
+                            "all — the environment is a short demo whose only state is what "
+                            "the migration and seed tasks put there. Production sets "
+                            "db_deletion_protection=True in infra/config/prod.py and retains "
+                            "the instance."
                         ),
                     },
+                    {
+                        "id": "AwsSolutions-RDS13",
+                        "reason": (
+                            "Automated backups are off (db_backup_retention_days=0). There "
+                            "is nothing to restore: the catalogue is rebuilt by re-running "
+                            "the migration and seed tasks, which every deploy does anyway, "
+                            "and a backup window on a t4g.micro only delays the instance "
+                            "reaching `available`. Production keeps 14 days in "
+                            "infra/config/prod.py."
+                        ),
+                    },
+                ],
+            )
+
+        if cache_replicas == 0:
+            # Conditional on the replica count, not on the environment name: any
+            # environment that configures a replica gets Multi-AZ and is checked
+            # by this rule rather than suppressed.
+            NagSuppressions.add_resource_suppressions(
+                self.cache,
+                [
+                    {
+                        "id": "AwsSolutions-AEC4",
+                        "reason": (
+                            "A single-node replication group cannot be Multi-AZ — "
+                            "ElastiCache requires a replica to fail over to, and staging "
+                            "runs zero for cost. What is given up is the failover ADR-003 "
+                            "chose Redis for: losing the node loses every Cart and session "
+                            "in a demo environment, which is an accepted outcome here and "
+                            "is not accepted in production, where cache_replicas is 1."
+                        ),
+                    }
                 ],
             )
 

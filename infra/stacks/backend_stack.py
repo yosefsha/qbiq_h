@@ -103,14 +103,30 @@ class BackendStack(Stack):
                 description=target.description,
             )
 
+        # Container Insights is billed per published metric, continuously, for
+        # every task — a standing charge to observe an environment that is a
+        # short demo and has no dashboards or alarms reading those metrics.
+        # Production keeps it. The ECS console still shows service events,
+        # task health and the ALB target-group metrics without it.
+        is_production = env_config.get("environment") == "prod"
+
         cluster = ecs.Cluster(
-            self, "Cluster", vpc=vpc, container_insights_v2=ecs.ContainerInsights.ENABLED
+            self,
+            "Cluster",
+            vpc=vpc,
+            container_insights_v2=(
+                ecs.ContainerInsights.ENABLED if is_production else ecs.ContainerInsights.DISABLED
+            ),
         )
 
         log_group = logs.LogGroup(
             self,
             "BackendLogs",
-            retention=logs.RetentionDays.ONE_MONTH,
+            # 30 days in production, one week in staging — long enough to debug
+            # a demo, short enough not to accumulate storage nobody reads.
+            retention=(
+                logs.RetentionDays.ONE_MONTH if is_production else logs.RetentionDays.ONE_WEEK
+            ),
             removal_policy=RemovalPolicy.DESTROY,
         )
 
@@ -248,7 +264,11 @@ class BackendStack(Stack):
         # Environment/Service/Owner tags are applied once at the App in app.py and
         # propagate into this stack, so they are deliberately not repeated here.
 
-        self._suppress_nag_findings(https_enabled="certificate" in listener)
+        self._suppress_nag_findings(
+            https_enabled="certificate" in listener,
+            is_production=is_production,
+            cluster=cluster,
+        )
 
     # ------------------------------------------------------------------
     # Task configuration
@@ -605,7 +625,9 @@ class BackendStack(Stack):
     # ------------------------------------------------------------------
     # cdk-nag
     # ------------------------------------------------------------------
-    def _suppress_nag_findings(self, https_enabled: bool) -> None:
+    def _suppress_nag_findings(
+        self, https_enabled: bool, is_production: bool, cluster: ecs.Cluster
+    ) -> None:
         listener_state = (
             "The listener is HTTPS on 443 with an HTTP:80 listener that only "
             "redirects to it."
@@ -619,6 +641,26 @@ class BackendStack(Stack):
                 "with a redirect; see docs/runbook.md."
             )
         )
+
+        if not is_production:
+            # Conditional: production leaves Container Insights on and is checked
+            # by this rule rather than suppressed.
+            NagSuppressions.add_resource_suppressions(
+                cluster,
+                [
+                    {
+                        "id": "AwsSolutions-ECS4",
+                        "reason": (
+                            "Container Insights is billed per published metric per task, "
+                            "continuously, and nothing in this environment reads those "
+                            "metrics — staging is a short demo with no dashboards built on "
+                            "them. Service events, task health and the ALB target-group "
+                            "metrics are still available without it, which is what "
+                            "debugging a demo actually uses. Production keeps it enabled."
+                        ),
+                    }
+                ],
+            )
 
         NagSuppressions.add_resource_suppressions(
             self.service.load_balancer,

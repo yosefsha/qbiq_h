@@ -40,6 +40,8 @@ class EcrStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        is_production = env_config["environment"] == "prod"
+
         self.repository = ecr.Repository(
             self,
             "BackendRepo",
@@ -48,12 +50,27 @@ class EcrStack(Stack):
             # and scripts type. Changing it would orphan every pushed image and
             # every `docker pull` anybody has written down.
             repository_name=f"{env_config['service_name']}-backend",
-            # RETAIN because a registry outlives the stack that references it.
-            # Destroying it would delete every image, including the one the
-            # currently-running tasks are still pulling on restart, and a
-            # `cdk destroy` of the API tier is not a decision to discard build
+            # Production RETAINs, because a registry outlives the stack that
+            # references it: destroying it would delete every image, including
+            # the one currently-running tasks pull on restart, and a `cdk
+            # destroy` of the API tier is not a decision to discard build
             # artefacts.
-            removal_policy=RemovalPolicy.RETAIN,
+            #
+            # Staging does not, because RETAIN made the environment
+            # un-redeployable. `repository_name` is fixed, so a destroyed stack
+            # left the repository behind and the next `cdk deploy` failed early
+            # validation with "Resource of type 'AWS::ECR::Repository' with
+            # identifier 'myapp-backend' already exists" — the teardown/redeploy
+            # cycle `scripts/deploy-to-aws.sh` exists to make routine. Staging
+            # images are rebuilt from the commit being deployed and are worth
+            # nothing once the stack is gone.
+            #
+            # `empty_on_delete` is required for DESTROY to actually work: ECR
+            # refuses to delete a repository that still holds images, so without
+            # it the delete swaps one failure for another. It provisions a
+            # custom resource that empties the repository first.
+            removal_policy=RemovalPolicy.RETAIN if is_production else RemovalPolicy.DESTROY,
+            empty_on_delete=not is_production,
             lifecycle_rules=[ecr.LifecycleRule(max_image_count=20)],
         )
 

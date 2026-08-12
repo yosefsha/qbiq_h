@@ -35,10 +35,12 @@ STAGING_CONFIG = {
     # losing that AZ takes staging down until ECS reschedules. Production keeps
     # two (infra/config/prod.py) and is not touched by this.
     #
-    # max stays at 10, so a load test can still scale this environment out.
+    # max is 2, not 10. Staging is a short-lived demo and nothing load-tests it;
+    # a ceiling of 10 only decides how expensive a runaway scaling event is
+    # allowed to get. Raise it again the day something actually load-tests here.
     "backend_desired_count": 1,
     "backend_min_tasks": 1,
-    "backend_max_tasks": 10,
+    "backend_max_tasks": 2,
     # Protocol the ALB listener speaks — one key, read by backend_stack.py to
     # build the listener and by frontend_stack.py for CloudFront's
     # OriginProtocolPolicy on the `/api/*` behaviour. They have to agree or the
@@ -76,15 +78,29 @@ STAGING_CONFIG = {
     "db_instance_type": "t4g.micro",
     "db_allocated_storage": 20,
     "db_max_allocated_storage": 50,
-    "db_backup_retention_days": 1,
+    # Zero, not one. Automated backups of a demo database that is recreated from
+    # migrations on every deploy protect nothing, and a retention of 0 also skips
+    # the backup window, so the instance reaches `available` sooner. Production
+    # keeps 14 (infra/config/prod.py).
+    "db_backup_retention_days": 0,
     "db_multi_az": False,
     "db_deletion_protection": False,
     "cache_node_type": "cache.t4g.micro",
-    # One replica, so automatic failover has somewhere to fail over to. Below
-    # this the replication group cannot enable failover at all, which would make
-    # staging unable to exercise the property ADR-003 chose Redis for.
-    "cache_replicas": 1,
-    "cache_snapshot_retention_days": 1,
+    # Zero replicas — a single node. This reverses the earlier choice here, so
+    # the old reasoning is restated rather than deleted: one replica gave
+    # automatic failover somewhere to fail over to, which is the property
+    # ADR-003 chose Redis for, and staging could therefore rehearse it.
+    #
+    # Staging is a short demo and cost won, exactly as it did for the task count
+    # above: the replica is a second cache.t4g.micro node running continuously to
+    # exercise a property nothing here depends on. data_stack.py derives
+    # `automatic_failover_enabled` and `multi_az_enabled` from this number, so
+    # setting it back to 1 restores failover with no other edit. Production is
+    # untouched and keeps its replica.
+    "cache_replicas": 0,
+    # No snapshots. Carts and sessions in a demo are disposable, and the daily
+    # snapshot is billed storage plus a slower teardown.
+    "cache_snapshot_retention_days": 0,
     # Deploys come from GitHub Actions over OIDC, not from CodePipeline — see
     # ADR-004. These three keys are the whole of what the deploy role trusts.
     "github_owner": "yosefsha",
