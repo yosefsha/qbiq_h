@@ -27,24 +27,21 @@ class NetworkStack(Stack):
             ],
         )
 
-        self.alb_sg = ec2.SecurityGroup(
-            self,
-            "AlbSg",
-            vpc=self.vpc,
-            description="ALB - allow inbound HTTPS only",
-            allow_all_outbound=False,
-        )
-        self.alb_sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "HTTPS")
-        self.alb_sg.add_egress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(8000), "To ECS tasks")
-
-        self.ecs_sg = ec2.SecurityGroup(
-            self,
-            "EcsSg",
-            vpc=self.vpc,
-            description="ECS tasks - allow inbound from ALB only",
-            allow_all_outbound=True,
-        )
-        self.ecs_sg.add_ingress_rule(self.alb_sg, ec2.Port.tcp(8000), "From ALB")
+        # This stack deliberately exports only the VPC.
+        #
+        # It previously declared an ALB security group and an ECS task security
+        # group here. Neither was ever attached to anything — backend_stack's
+        # ApplicationLoadBalancedFargateService creates its own — so they read as
+        # enforcement while enforcing nothing, which is worse than their absence.
+        # Security groups now live in the stack that owns the resource they
+        # protect: the task security group is in backend_stack, and the ALB's
+        # (with its HTTPS-only listener) arrives with the ACM certificate in
+        # INF-06, since an HTTPS listener cannot exist without one.
+        #
+        # Declaring them here would also be a dependency cycle: the load
+        # balancer construct adds an ingress rule to the task security group, so
+        # a group owned by this stack would make the network stack depend on the
+        # backend stack that already depends on it.
 
         # Environment/Service/Owner tags are applied once at the App in app.py and
         # propagate into this stack, so they are deliberately not repeated here.
@@ -63,19 +60,4 @@ class NetworkStack(Stack):
                 }
             ],
             apply_to_children=True,
-        )
-
-        NagSuppressions.add_resource_suppressions(
-            self.alb_sg,
-            [
-                {
-                    "id": "AwsSolutions-EC23",
-                    "reason": (
-                        "Intentional: this is the security group for the internet-facing "
-                        "ALB, which must accept HTTPS from any client. Ingress is limited "
-                        "to TCP 443; the ECS tasks behind it accept traffic only from this "
-                        "security group on port 8000."
-                    ),
-                }
-            ],
         )

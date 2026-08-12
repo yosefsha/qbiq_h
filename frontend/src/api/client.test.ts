@@ -109,12 +109,16 @@ describe('apiClient', () => {
     expect(headers.get('Content-Type')).toBe('application/json')
   })
 
-  it('treats an empty successful body (e.g. 204 No Content) as no data rather than a parse error', async () => {
+  it('reports an empty successful body as an error rather than laundering undefined into T', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await apiClient.delete('/cart/line-items/abc')
+    // Every endpoint in this API returns a body, so a 204 is a contract
+    // violation. Returning { ok: true, data: undefined } typed as Cart would
+    // push the failure to the caller's first property access instead.
+    const result = await apiClient.delete<{ totalMinor: number }>('/cart/line-items/abc')
 
-    expect(result).toEqual({ ok: true, data: undefined })
+    expect(result.ok).toBe(false)
+    expect(result).toMatchObject({ error: { kind: 'parse' } })
   })
 })

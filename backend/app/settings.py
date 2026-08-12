@@ -51,6 +51,7 @@ class Settings:
     allowed_origins: tuple[str, ...]
     cache_ttl_seconds: int
     session_ttl_seconds: int
+    log_level: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -66,6 +67,7 @@ class Settings:
             ),
             cache_ttl_seconds=int(os.environ.get("CACHE_TTL_SECONDS", "300")),
             session_ttl_seconds=int(os.environ.get("SESSION_TTL_SECONDS", "1800")),
+            log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
         )
 
 

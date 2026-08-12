@@ -5,7 +5,7 @@ from cdk_nag import AwsSolutionsChecks
 from config.prod import PROD_CONFIG
 from config.staging import STAGING_CONFIG
 from stacks.network_stack import NetworkStack
-from stacks.backend_stack import BackendStack
+from stacks.backend_stack import CONTAINER_NAME, BackendStack
 from stacks.frontend_stack import FrontendStack
 from stacks.pipeline_stack import PipelineStack
 
@@ -31,11 +31,21 @@ backend = BackendStack(
 
 frontend = FrontendStack(app, f"{target_env}-frontend", env=aws_env, env_config=env_config)
 
+# The pipeline holds direct references to this environment's ECS service, S3
+# bucket and CloudFront distribution, so it is environment-scoped and must carry
+# an environment-prefixed name. A fixed name would make `cdk deploy -c env=staging`
+# and `-c env=prod` target one CloudFormation stack, each silently reconfiguring
+# the other's pipeline in place.
 PipelineStack(
     app,
-    "ci-cd-pipeline",
+    f"{target_env}-pipeline",
     env=aws_env,
     env_config=env_config,
+    ecr_repo=backend.ecr_repo,
+    service=backend.service.service,
+    container_name=CONTAINER_NAME,
+    frontend_bucket=frontend.bucket,
+    distribution=frontend.distribution,
 )
 
 # Tagging is applied once, at the App, so every stack — including stacks added
