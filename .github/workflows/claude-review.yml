@@ -1,0 +1,162 @@
+name: Claude PR Review
+
+# Automated review on every pull request: a top-level findings comment plus
+# inline comments anchored to the lines they concern.
+#
+# Kept out of ci.yml deliberately. ci.yml is the deterministic gate that decides
+# whether a change is mergeable; this one calls a paid external API. Combined, a
+# rate limit or an outage would redden the merge gate for a reason unrelated to
+# the code — and a gate that reddens for unrelated reasons is one people learn
+# to ignore.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+
+# A new push supersedes the review it invalidated — no point paying for a review
+# of a diff that no longer exists.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Claude review
+    runs-on: ubuntu-latest
+    # Drafts are work in progress; reviewing every intermediate push is noise the
+    # author has not asked for. `ready_for_review` above picks it up the moment
+    # it stops being a draft.
+    if: github.event.pull_request.draft == false
+
+    steps:
+      # Fails loudly rather than skipping. An earlier version of this workflow
+      # exited green when the secret was absent, to avoid a red X — which meant
+      # every PR showed a passing "Claude review" check that had reviewed
+      # nothing. A silent no-op that looks like success is worse than an obvious
+      # failure, because nobody goes looking for the reason.
+      - name: Verify auth secret is set
+        run: |
+          if [ -z "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set — PR review cannot run. Set it in Settings → Secrets → Actions, or run: gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${{ github.repository }}"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the review diffs against the base branch, which a
+          # depth-1 clone cannot reach.
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        # Advisory, never a merge gate: a rate-limited or failed review must not
+        # be indistinguishable from "this code has a problem". Note this covers
+        # runtime failure only — missing configuration still fails hard above.
+        continue-on-error: true
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          show_full_output: true
+          claude_args: |
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),mcp__github_inline_comment__create_inline_comment,Read,Grep,Glob"
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            BASE BRANCH: ${{ github.event.pull_request.base.ref }}
+
+            You are reviewing a PR for qbiq_h — a mini e-commerce storefront.
+            Stack: FastAPI + SQLAlchemy 2.0 + Alembic on Postgres, Redis for
+            sessions/carts/cache, Vue 3 (script setup, Pinia, Tailwind) SPA,
+            AWS CDK (Python) for infra, Docker Compose for local development.
+
+            The PR branch is already checked out in the working directory.
+
+            Report findings grouped by severity: CRITICAL, WARNING, SUGGESTION.
+            Skip the summary — go straight to findings. Omit any category with
+            no findings. If the diff is clean, say so in one line.
+
+            This is a non-interactive GitHub Actions run — there is no host UI,
+            so do NOT use any local structured-findings/report tool (e.g.
+            ReportFindings); output written there is invisible to everyone
+            outside this action's log and will never reach the PR. Instead:
+            - Post overall findings as a single top-level comment via
+              `gh pr comment ${{ github.event.pull_request.number }} --body "..."`.
+            - For an issue tied to a specific line, use
+              `mcp__github_inline_comment__create_inline_comment` (with
+              `confirmed: true`) rather than restating it in the top-level comment.
+            Only post GitHub comments — don't just print the review as your final
+            response text.
+
+            ## Project standards (read these before reviewing)
+            `CLAUDE.md`, `CONTEXT.md`, `docs/coding-instructions.md`, and any ADR
+            under `docs/adr/` that the changed code touches. An ADR is a
+            constraint, not a suggestion — flag a change that violates one even
+            if the code is otherwise correct.
+
+            ## Contract drift (always check — this repo's most common defect)
+            Tasks here are built independently against each other's published
+            contracts, so the dangerous bug is two components disagreeing about
+            a shared shape. This has shipped twice already: the Cart resolved
+            product ids by name-slug while the catalogue served database primary
+            keys, and the frontend read a `pending` flag the store had replaced.
+            - CD-1: An id, field name, status code, or JSON casing that differs
+              between producer and consumer.
+            - CD-2: A repository implementation whose behaviour diverges from the
+              `Protocol` in `app/domain/repositories.py`, or from
+              `InMemoryRepository`, which tests substitute for it.
+            - CD-3: Frontend types in `frontend/src/types.ts` that no longer match
+              what the API actually serves.
+
+            ## Money (always check)
+            - M-1: Prices are integer minor units plus a currency code
+              everywhere. A float, a `Decimal`, or a formatted string crossing a
+              boundary is a defect.
+            - M-2: Totals are computed server-side by integer addition. A total
+              computed in the browser, or any rounding step, is a defect.
+            - M-3: No endpoint may accept a price from the client.
+
+            ## Security
+            - S-1: The session id is a bearer secret — it must never reach a log,
+              an error body, or a URL. `python-json-logger` promotes `extra` keys
+              to top-level fields, so logging it anywhere writes a live
+              credential to CloudWatch.
+            - S-2: Cart routes take identity from the `get_session` dependency
+              only — never from a query parameter or header (ADR-001).
+            - S-3: No raw string interpolation into SQL; sort/filter keys resolve
+              through an explicit whitelist.
+            - S-4: Unbounded input — a missing `limit` ceiling is an unbounded
+              scan on a public, unauthenticated endpoint.
+            - This app is deliberately unauthenticated (ADR-002). Do NOT report
+              the absence of auth as a finding.
+
+            ## Tests
+            - T-1: A test that asserts the current behaviour of a bug.
+            - T-2: A test that cannot fail, or an assertion weakened to make a
+              failure go away.
+            - T-3: A test that skips itself in CI — a skip there is
+              indistinguishable from a pass.
+
+            ## Architecture
+            - A-1: Route modules stay thin and depend on Protocols. No SQLAlchemy
+              import may appear in `app/api/products.py`.
+            - A-2: Storage types never escape `app/repositories/` — no ORM row or
+              Redis type in a domain signature.
+            - A-3: The Vue cart store mirrors server state; it never owns the
+              total (ADR-001).
+            - A-4: `ruff` and `eslint` already run in CI — do not duplicate them.
+              No style nits, no "consider extracting this", no praise.
+
+            Report only what you are confident is a real problem, and give a
+            concrete failure scenario for any correctness claim: specific inputs
+            or state, and the resulting wrong output. If you cannot name one, it
+            is not a correctness finding. Verify before asserting — if a claim
+            depends on how a function behaves, read that function rather than
+            inferring from its name.
+
+            Be concise. One line per finding is enough unless the fix is
+            non-obvious.
