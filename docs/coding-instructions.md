@@ -31,6 +31,40 @@ The backend lives in `backend/` and the SPA in `frontend/`, so each Docker build
 - Use `snake_case` for functions and variables, `PascalCase` for classes.
 - One class/concern per file.
 
+### Dataclasses
+
+Domain types are frozen dataclasses (`app/domain/`). They are the source of truth for what a
+concept *has*, so **derive conversions from them rather than restating their fields**. A hand-written
+field list is a second definition that drifts silently: adding a field to the dataclass leaves the
+converter quietly dropping it, and no test fails, because the test was written against the same
+incomplete list.
+
+- **Serializing** — `dataclasses.asdict()` walks nested dataclasses, tuples, and lists already. Use
+  it instead of building the dict field by field.
+- **Deserializing** — take the field names from `dataclasses.fields(T)`, not from a literal list.
+  Reconstruct nested types explicitly, since `asdict` flattens them to plain dicts:
+  ```python
+  _FIELDS = tuple(f.name for f in fields(Product))
+
+  def _to_product(data: dict[str, Any]) -> Product:
+      known = {name: data[name] for name in _FIELDS}
+      known["category"] = Category(**data["category"])
+      return Product(**known)
+  ```
+- **Domain → Pydantic** — set `from_attributes=True` on the schema and call `Model.model_validate(obj)`.
+  Pydantic reads the dataclass's attributes directly, recursively, when the nested schemas share the
+  base. Do not write a `from_domain` that names every field; put one generic `from_domain` on the
+  shared base class instead. Extra attributes are ignored, so passing a `ProductDetail` where a
+  summary schema is expected projects it down rather than failing.
+- **When to write the mapping by hand:** when it is a genuine *reshape* rather than a copy — the
+  field names differ, values are computed, or one type flattens another. `app/api/cart.py`'s
+  `_to_cart_view` flattens `LineItem{product, quantity}` into a flat wire row and derives the
+  currency; that is logic, and it belongs in code, not in a generic converter.
+- Never rely on `hash()` or `repr()` of a dataclass for anything persistent (a cache key, an id).
+  Both depend on field declaration order and formatting, neither of which is a contract. Build an
+  explicit, fixed-order tuple of values and hash that — see
+  `app/repositories/cached_product_repository.py::_stable_hash`.
+
 ### Configuration
 - Use environment variables for all runtime configuration (DB URLs, file paths, feature flags).
 - Provide sensible defaults so local development works without any env vars set.
