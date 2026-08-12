@@ -41,9 +41,17 @@ jobs:
       # nothing. A silent no-op that looks like success is worse than an obvious
       # failure, because nobody goes looking for the reason.
       - name: Verify auth secret is set
+        # Passed through `env:` rather than interpolated into the script body.
+        # `${{ secrets.X }}` inside `run:` is substituted into the shell source
+        # before the shell parses it, so the value becomes part of the program
+        # text — a token containing shell metacharacters would be interpreted
+        # rather than compared. As an environment variable it is only ever data.
+        env:
+          AUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          if [ -z "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}" ]; then
-            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set — PR review cannot run. Set it in Settings → Secrets → Actions, or run: gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${{ github.repository }}"
+          if [ -z "$AUTH_TOKEN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set — PR review cannot run. Set it in Settings → Secrets → Actions, or run: gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo $REPO"
             exit 1
           fi
 
