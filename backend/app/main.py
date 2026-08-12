@@ -7,14 +7,14 @@ concerns (status codes, response models) to that logic.
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.cart import router as cart_router
 from app.api.deps import get_sql_product_repository
 from app.api.products import router as products_router
 from app.api.providers import get_product_repository
-from app.health import HealthCheck
+from app.health import STATUS_OK, default_health_check
 from app.logging_config import configure_logging
 from app.middleware import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.models import HealthResponse
@@ -59,10 +59,18 @@ app.dependency_overrides[get_product_repository] = get_sql_product_repository
 app.include_router(products_router)
 app.include_router(cart_router)
 
-_health_check = HealthCheck()
+_health_check = default_health_check()
 
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
-    """Liveness probe used by the ALB health check."""
-    return _health_check.status()
+def health(response: Response) -> HealthResponse:
+    """Health check used by the ALB target group.
+
+    503 rather than 500 on failure: the task is answering, it just is not
+    able to serve requests yet. See `app.health` for why the dependency
+    probes stop once they have succeeded.
+    """
+    report = _health_check.status()
+    if report.status != STATUS_OK:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return report

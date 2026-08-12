@@ -15,9 +15,39 @@ STAGING_CONFIG = {
     "owner": "platform-team",
     "domain_name": "example.com",
     "frontend_domain": "staging.example.com",
-    "backend_desired_count": 1,
-    "backend_min_tasks": 1,
-    "backend_max_tasks": 4,
+    # Two tasks, not one, in staging as well as production. CLAUDE.md states
+    # min 2 / max 10 without an environment qualifier, and a single task makes
+    # the two properties this environment exists to rehearse untestable: it
+    # pins the service to one AZ, and a rolling deploy at
+    # minimumHealthyPercent 100 never has a second task to shift traffic to.
+    # The difference is one 0.25 vCPU / 0.5 GB Fargate task.
+    "backend_desired_count": 2,
+    "backend_min_tasks": 2,
+    "backend_max_tasks": 10,
+    # Protocol the ALB listener speaks — one key, read by backend_stack.py to
+    # build the listener and by frontend_stack.py for CloudFront's
+    # OriginProtocolPolicy on the `/api/*` behaviour. They have to agree or the
+    # edge answers 502 and nothing in the application log says why, which is
+    # why this is a single setting rather than one on each side.
+    # "HTTPS" switches the listener to 443 (plus an HTTP:80 listener that only
+    # redirects) and requires `alb_certificate_arn` below.
+    "alb_listener_protocol": "HTTP",
+    # The ACM certificate the HTTPS listener presents. Empty because
+    # `domain_name` above is a placeholder and a certificate cannot be issued
+    # against a zone that does not exist. It must cover `frontend_domain`, not
+    # the ALB's own *.elb.amazonaws.com name: CloudFront forwards the viewer's
+    # Host header and uses it for SNI to this origin. See docs/runbook.md.
+    "alb_certificate_arn": "",
+    # Where CloudWatch alarms are sent. `None` creates the SNS topic with no
+    # subscription — the alarms still fire and are still visible in the
+    # console, but nobody is paged. Set a real address before relying on them.
+    "alarm_email": None,
+    # Application runtime settings injected into the task definition. They
+    # match backend/app/settings.py's own defaults today; they are here so an
+    # environment can differ without a code change.
+    "cache_ttl_seconds": 300,
+    "session_ttl_seconds": 1800,
+    "log_level": "INFO",
     # Data tier. Staging is deliberately smaller and cheaper than production:
     # single-AZ, one day of backups, no deletion protection. Every one of those
     # choices is a cdk-nag finding suppressed by name in data_stack.py, with the
