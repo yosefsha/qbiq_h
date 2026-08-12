@@ -60,7 +60,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "Delivered as a DRM-free EPUB and PDF, readable on any device, "
             "with lifetime access to future revisions."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/deep-work.jpg",
+        thumbnail_url="/assets/thumbnails/deep-work.svg",
         category_slug="e-books",
         reviews=(
             ReviewSeed(
@@ -84,7 +84,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "trade-offs between them. Includes downloadable diagrams and "
             "companion code samples in the EPUB package."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/clean-architecture.jpg",
+        thumbnail_url="/assets/thumbnails/clean-architecture.svg",
         category_slug="e-books",
         reviews=(
             ReviewSeed(
@@ -107,7 +107,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "modern development practices. Includes the original "
             "tips list as a quick-reference PDF insert."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/pragmatic-programmer.jpg",
+        thumbnail_url="/assets/thumbnails/pragmatic-programmer.svg",
         category_slug="e-books",
         reviews=(
             ReviewSeed(
@@ -127,7 +127,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "around the four laws of behaviour change. Delivered as EPUB, "
             "MOBI, and PDF with an accompanying habit-tracking template."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/atomic-habits.jpg",
+        thumbnail_url="/assets/thumbnails/atomic-habits.svg",
         category_slug="e-books",
         reviews=(
             ReviewSeed("Grace P.", 5, "Simple, actionable, and it actually stuck."),
@@ -146,7 +146,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "one seat for twelve months, including all point releases and "
             "priority email support."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/pixelforge-studio.jpg",
+        thumbnail_url="/assets/thumbnails/pixelforge-studio.svg",
         category_slug="software-licences",
         reviews=(
             ReviewSeed(
@@ -170,7 +170,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "payment, no recurring fees, includes all future major "
             "versions."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/taskflow-pro.jpg",
+        thumbnail_url="/assets/thumbnails/taskflow-pro.svg",
         category_slug="software-licences",
         reviews=(
             ReviewSeed(
@@ -192,7 +192,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "browser and biometric unlock on mobile. Two-year single-user "
             "licence, key delivered by email immediately after purchase."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/securevault.jpg",
+        thumbnail_url="/assets/thumbnails/securevault.svg",
         category_slug="software-licences",
         reviews=(
             ReviewSeed(
@@ -212,7 +212,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "with CI integration and a shared dashboard. Team licence for "
             "up to fifteen developers, renewed annually with this key."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/codesight.jpg",
+        thumbnail_url="/assets/thumbnails/codesight.svg",
         category_slug="software-licences",
         reviews=(
             ReviewSeed(
@@ -237,7 +237,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "containerized cloud environment. Includes lifetime access "
             "and downloadable source code for every module."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/backend-fastapi-course.jpg",
+        thumbnail_url="/assets/thumbnails/backend-fastapi-course.svg",
         category_slug="online-courses",
         reviews=(
             ReviewSeed(
@@ -257,7 +257,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "Vite. Includes quizzes, a capstone project, and a completion "
             "certificate."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/vue3-typescript-course.jpg",
+        thumbnail_url="/assets/thumbnails/vue3-typescript-course.svg",
         category_slug="online-courses",
         reviews=(
             ReviewSeed(
@@ -278,7 +278,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "instances, and CI/CD pipelines with AWS CDK in Python. Ends "
             "with a capstone deploying a full three-tier application."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/aws-cdk-course.jpg",
+        thumbnail_url="/assets/thumbnails/aws-cdk-course.svg",
         category_slug="online-courses",
         reviews=(
             ReviewSeed(
@@ -297,7 +297,7 @@ PRODUCT_SEEDS: tuple[ProductSeed, ...] = (
             "database. Exercises run against a real Postgres instance "
             "provided in the browser sandbox."
         ),
-        thumbnail_url="https://cdn.qbiq.dev/products/sql-for-developers-course.jpg",
+        thumbnail_url="/assets/thumbnails/sql-for-developers-course.svg",
         category_slug="online-courses",
         reviews=(
             ReviewSeed(
@@ -339,7 +339,8 @@ class CatalogueSeeder:
 
     def _seed_products(self, categories_by_slug: dict[str, Category]) -> None:
         """Inserts any product from `PRODUCT_SEEDS` missing by `name`, along
-        with any of its reviews missing by `(product, author)`."""
+        with any of its reviews missing by `(product, author)`, and reconciles
+        `thumbnail_url` on products that already exist."""
         existing_products = {
             product.name: product for product in self._session.query(Product).all()
         }
@@ -358,6 +359,21 @@ class CatalogueSeeder:
                 self._session.add(product)
                 self._session.flush()
                 existing_products[seed.name] = product
+            elif product.thumbnail_url != seed.thumbnail_url:
+                # Insert-only was not enough. Every seeded product pointed at
+                # `https://cdn.qbiq.dev/products/<slug>.jpg` — a host that does
+                # not exist — so a database seeded before that was fixed holds
+                # twelve dead URLs, and a re-seed that only inserts leaves every
+                # one of them in place. It looks like it worked on a fresh
+                # database while doing nothing to the environment that has the
+                # problem.
+                #
+                # Only `thumbnail_url` is reconciled, deliberately. Prices,
+                # descriptions and reviews are things a demo may have edited in
+                # place, and a seed run is not a mandate to revert them; the
+                # thumbnail is the one field whose seeded value is authoritative
+                # because it names a file this repository ships.
+                product.thumbnail_url = seed.thumbnail_url
 
             existing_authors = {review.author for review in product.reviews}
             for review_seed in seed.reviews:

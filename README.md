@@ -350,8 +350,38 @@ worse than none:
   order history. Per [`CONTEXT.md`](CONTEXT.md), that is what Checkout *means* here.
 - **No caching layer.** `CACHE_TTL_SECONDS` is parsed into settings and read by nothing.
   Every product query goes to Postgres.
-- **No data stack in CDK.** `infra/stacks/data_stack.py` does not exist yet (INF-04), so
-  no deployable RDS or ElastiCache is defined, and the ECS task definition injects no
-  `DATABASE_URL` or `REDIS_URL`. See the runbook.
-- **Nothing is deployed.** Local Docker Compose is the only environment that has ever
-  run.
+- **Staging is deployed; production is not.** `scripts/deploy-to-aws.sh staging` has run
+  against a real account, and staging is deliberately minimal — one task, a single-node
+  Redis with no failover, no RDS backups, and every resource set to be destroyed with the
+  stack. None of the production stacks have ever been created.
+
+## Future development
+
+Things this project would need before it were more than a demo, kept here rather than in
+issues because each is a known consequence of a deliberate shortcut, not an open task
+somebody is working:
+
+- **A GitHub Actions deploy has never succeeded, and cannot yet.** The workflow's gate
+  fails on the first prerequisite: `AWS_ACCOUNT_ID` is unset as a repository variable. A
+  push to `main` also resolves the target to `production` ([`deploy.yml:89`](.github/workflows/deploy.yml)),
+  and no production stack exists to deploy into. `scripts/deploy-to-aws.sh` is the only
+  path that has ever worked end to end.
+- **The Actions deploy runs migrations but never seeds.** `deploy.yml` runs
+  `alembic upgrade head` as a one-off task and stops there, while
+  `scripts/deploy-to-aws.sh` runs the migration *and* `python -m app.seed`. An
+  environment first deployed by Actions would come up with an empty catalogue and no
+  error to explain it. Either the workflow grows a seed step or seeding moves into the
+  migration task's command.
+- **Assets outside `frontend/dist/` cannot survive a deploy.** Both deploy paths run
+  `aws s3 sync frontend/dist/ s3://$BUCKET/ --delete`, so anything uploaded to the bucket
+  by hand is deleted by the next deploy. Product thumbnails live in
+  `frontend/public/assets/thumbnails/` for exactly this reason — Vite copies `public/`
+  into `dist/`, so they ship with the build. Anything that genuinely cannot live in the
+  build needs an `--exclude` on both syncs, in both files, or it will disappear silently.
+- **The seed reconciles `thumbnail_url` and nothing else.** Re-seeding repairs that one
+  field on existing rows; prices, descriptions and reviews are left as they are. A real
+  catalogue would need a considered upsert policy rather than one field's worth of
+  special case.
+- **RDS secret rotation is manual.** Removing the NAT Gateway left the rotation Lambda
+  without egress to the Secrets Manager API, so automatic rotation was removed. See
+  `data_stack.py` and the runbook.
