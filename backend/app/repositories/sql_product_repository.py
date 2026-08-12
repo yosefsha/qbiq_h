@@ -223,6 +223,18 @@ class SqlProductRepository:
         row = self._session.execute(stmt).scalar_one_or_none()
         return _to_product_detail(row) if row is not None else None
 
+    def list_categories(self) -> tuple[Category, ...]:
+        """Returns every `Category`, ordered by `slug` for a deterministic
+        listing.
+
+        A single, unbounded `SELECT` — the category table is small and
+        expected to stay so (it is edited by catalogue maintainers, not
+        Shoppers), so no paging is offered here.
+        """
+        stmt = select(CategoryRow).order_by(CategoryRow.slug.asc())
+        rows = self._session.execute(stmt).scalars().all()
+        return tuple(_to_category(row) for row in rows)
+
     # -- internals ------------------------------------------------------
 
     def _filtered_products(self, query: ProductQuery):

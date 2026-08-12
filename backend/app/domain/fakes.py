@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterable
 
 from app.domain.cart import Cart, LineItem
 from app.domain.catalog import (
+    Category,
     Product,
     ProductDetail,
     ProductPage,
@@ -83,6 +84,20 @@ class InMemoryRepository:
         """
         product = self._products.get(product_id)
         return product if isinstance(product, ProductDetail) else None
+
+    def list_categories(self) -> tuple[Category, ...]:
+        """Derives the category list from the seeded products.
+
+        Deduplicated by slug and sorted by slug, matching the deterministic
+        ordering `SqlProductRepository.list_categories` gets from `ORDER BY
+        slug`, so tests written against the fake see the same ordering a
+        real Postgres-backed repository would produce.
+        """
+        by_slug: dict[str, Category] = {
+            product.category.slug: product.category
+            for product in self._products.values()
+        }
+        return tuple(by_slug[slug] for slug in sorted(by_slug))
 
     # -- CartRepository ---------------------------------------------------
 
