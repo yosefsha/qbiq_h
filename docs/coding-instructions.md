@@ -4,6 +4,39 @@
 
 - All configuration must be production-ready standard — no placeholder values, TODO stubs, or "good enough for now" defaults. Every config entry should be deployable to production as-is.
 
+## Branching
+
+**No commit is ever made on `main`.** Not a fixup, not a one-line doc change, not "this is too small for a PR". `main` advances only by merging a pull request; a commit authored on `main` is a mistake to be moved onto a branch, not a shortcut to be kept.
+
+Two reasons this is absolute rather than a preference: `main` is the deployment branch — `.github/workflows/deploy.yml` triggers on push to it — so a commit landing there aims a deploy at whatever was in the working tree at the time; and this repository has other people working in it, so `main` is shared state and a direct commit is a change nobody reviewed.
+
+**One branch per task**, cut from an up-to-date `main` before the first edit, named for the task's stable ID so the branch, the issue and the eventual PR line up:
+
+```bash
+git fetch origin && git switch -c feat/inf-08-thumbnails origin/main
+```
+
+Use the prefix that matches the work — `feat/`, `fix/`, `docs/`, `chore/` — followed by the lowercased task ID and a short slug.
+
+If a commit does end up on `main` before it is pushed, move it rather than push it:
+
+```bash
+git branch feat/inf-08-thumbnails      # keep the commit, on a branch
+git branch -f main origin/main         # main back to the remote (run from another branch)
+```
+
+## Worktrees for parallel work
+
+**One worktree per task whenever subagents are involved.** Agents working in parallel share a single checkout unless told otherwise, and two of them editing the same tree — or one switching branches under another — corrupts both. Give each task its own worktree so the branch it is on is its own:
+
+```bash
+git worktree add ../qbiq_h-inf-08 -b feat/inf-08-thumbnails origin/main
+git worktree list                       # what exists now
+git worktree remove ../qbiq_h-inf-08    # once the branch has landed
+```
+
+With the `Agent` tool, `isolation: "worktree"` does this per agent and cleans up a worktree left unchanged. A single agent working one task in sequence does not need one — the isolation is worth its cost only when work actually runs concurrently.
+
 ## Python / FastAPI
 
 ### Project Structure
