@@ -82,7 +82,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T
 
   try {
     const data = await readJsonBody<T>(response)
-    return { ok: true, data: data as T }
+    if (data === undefined) {
+      // An empty body cannot satisfy `T`. Casting `undefined` to `T` here would
+      // hand callers a value the type system swears is a Cart, so the first
+      // property access crashes at runtime with the compiler having signed off.
+      // Every endpoint in this API returns a body — a 204 is a contract
+      // violation, so report it as one.
+      return {
+        ok: false,
+        error: { kind: 'parse', message: 'Expected a JSON response body but it was empty' },
+      }
+    }
+    return { ok: true, data }
   } catch (cause) {
     return {
       ok: false,
