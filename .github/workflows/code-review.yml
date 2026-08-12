@@ -1,0 +1,125 @@
+name: Code review
+
+# Automated review on every pull request, kept in its own workflow rather than
+# added as a job in ci.yml on purpose: this one calls an external API and costs
+# money per run, while ci.yml is the deterministic gate that decides whether a
+# change is mergeable. Keeping them apart means an API outage, a rate limit, or
+# an exhausted budget degrades review to "no comment posted" instead of turning
+# the merge gate red for a reason that has nothing to do with the code.
+#
+# It is advisory. It posts comments; it does not block. `continue-on-error` on
+# the review step keeps a failed review from marking the run failed.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# A new push supersedes the review it invalidated — no point paying for a
+# review of a diff that no longer exists.
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Claude review
+    runs-on: ubuntu-latest
+    # Draft PRs are work in progress; reviewing every intermediate push is noise
+    # the author has not asked for yet. `ready_for_review` above triggers the
+    # review at the moment it stops being a draft.
+    if: github.event.pull_request.draft == false
+
+    permissions:
+      contents: read
+      pull-requests: write
+      # Required by the action for OIDC token exchange.
+      id-token: write
+
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@v4
+        with:
+          # Full history: the review prompt below diffs against the base branch,
+          # which a depth-1 clone cannot reach.
+          fetch-depth: 0
+
+      # Without this guard the step below fails on every PR from a fork, and on
+      # every PR at all until the secret is set — a confusing red X on work that
+      # is otherwise fine. Checked in a separate step so the reason is visible
+      # in the log rather than hidden in an `if` expression.
+      - name: Check for an API key
+        id: auth
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ANTHROPIC_API_KEY is not set — skipping automated review."
+            echo "Set it with: gh secret set ANTHROPIC_API_KEY --repo ${{ github.repository }}"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Review the diff
+        if: steps.auth.outputs.available == 'true'
+        # Advisory, never a merge gate: a failed or rate-limited review must not
+        # be indistinguishable from "this code has a problem".
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            BASE BRANCH: ${{ github.event.pull_request.base.ref }}
+
+            Review this pull request. The PR branch is already checked out in
+            the working directory.
+
+            Read `CLAUDE.md`, `CONTEXT.md`, and `docs/coding-instructions.md`
+            first — this repository has explicit standards, and a review that
+            contradicts them is worse than no review. Read any ADR under
+            `docs/adr/` that the changed code touches. An ADR is a constraint,
+            not a suggestion: flag a change that violates one even if the code
+            is otherwise correct.
+
+            Focus, in priority order:
+
+            1. **Correctness.** Bugs that would actually fire. State a concrete
+               failure scenario — specific inputs or state, and the resulting
+               wrong output. If you cannot name one, it is not a correctness
+               finding.
+            2. **Contract drift.** This codebase is built as independent tasks
+               that code against each other's published contracts, so the
+               dangerous defect is two components disagreeing about a shared
+               shape — an id format, a field name, a status code, a JSON casing.
+               Check the change against the contracts it depends on.
+            3. **Tests that do not test.** A test asserting the current
+               behaviour of a bug, a test that cannot fail, a test that skips
+               itself in CI, an assertion weakened to make a failure go away.
+            4. **Security.** Injection, secrets or bearer tokens reaching logs,
+               missing authorization, unbounded input. Note that this app is
+               deliberately unauthenticated (ADR-002) — do not report the
+               absence of auth as a finding.
+            5. **Money handling.** Prices are integer minor units everywhere.
+               A float, a rounding step, or a client-supplied price reaching a
+               total is a defect.
+
+            Rules:
+            - Report only what you are confident is a real problem. No style
+              nits, no "consider extracting this", no praise. `ruff` and
+              `eslint` already run in CI — do not duplicate them.
+            - If the diff is clean, say so in one line. An empty review is a
+              valid and useful outcome.
+            - Verify before asserting. If a claim depends on how a function
+              behaves, read that function rather than assuming from its name.
+
+            Use `gh pr comment` for the summary. Use
+            `mcp__github_inline_comment__create_inline_comment` (with
+            `confirmed: true`) to anchor a finding to the line it concerns.
+            Post GitHub comments only — do not emit the review as plain output,
+            since nobody will read it there.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Read,Grep,Glob"
+            --max-turns 40
