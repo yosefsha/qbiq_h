@@ -1,0 +1,116 @@
+/**
+ * Reusable stateful wrapper around a single `apiClient` call. Views hand it a
+ * zero-argument function that returns an `ApiResult` — typically a closure
+ * over `apiClient.get(...)` plus whatever path/id it needs — and this
+ * composable tracks the request's lifecycle and exposes a `retry()` that
+ * re-issues that exact same call.
+ *
+ * `apiClient` already never throws (see `api/client.ts`): every failure mode
+ * — offline, a non-2xx status, an unparsable body — comes back as
+ * `{ ok: false, error }` rather than a rejection. `execute` still wraps the
+ * call in a try/catch so a mistake in a caller-supplied `requestFn` (or a
+ * future change to that contract) can never surface as an unhandled promise
+ * rejection here.
+ */
+import { getCurrentInstance, onUnmounted, ref, shallowRef } from 'vue'
+import type { Ref, ShallowRef } from 'vue'
+
+import type { ApiError, ApiResult, AsyncRequestStatus } from '../types'
+
+export interface UseAsyncRequestOptions {
+  /** Issue the request as soon as the composable runs. Defaults to `true`. */
+  immediate?: boolean
+}
+
+export interface UseAsyncRequestReturn<T> {
+  // Written out rather than `ReturnType<typeof ref<AsyncRequestStatus>>`, which
+  // resolves to `Ref<AsyncRequestStatus | undefined>` — TypeScript picks ref's
+  // no-argument overload — advertising an `undefined` status that can never
+  // occur and that every consumer would have to assert away.
+  status: Ref<AsyncRequestStatus>
+  data: ShallowRef<T | undefined>
+  error: ShallowRef<ApiError | undefined>
+  /**
+   * Issues (or re-issues) the request. Calling it while one is in flight
+   * starts a new request; the newest one wins and older responses are
+   * discarded when they land.
+   */
+  execute: () => Promise<void>
+  /** Re-issues the same request. Intended for a "Retry" button's `@click`. */
+  retry: () => Promise<void>
+}
+
+function toNetworkError(cause: unknown): ApiError {
+  return {
+    kind: 'network',
+    message: cause instanceof Error ? cause.message : 'An unexpected error occurred',
+  }
+}
+
+export function useAsyncRequest<T>(
+  requestFn: () => Promise<ApiResult<T>>,
+  options: UseAsyncRequestOptions = {},
+): UseAsyncRequestReturn<T> {
+  const status = ref<AsyncRequestStatus>('idle')
+  const data = shallowRef<T>()
+  const error = shallowRef<ApiError>()
+
+  let disposed = false
+  // Guards against a stale response overwriting the state of a newer, still
+  // in-flight request (e.g. rapid retry clicks).
+  let requestToken = 0
+
+  // Only registered when there's an active component instance, so this
+  // composable can also be driven directly in unit tests without Vue's
+  // "no active component instance" warning.
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      disposed = true
+    })
+  }
+
+  async function execute(): Promise<void> {
+    // Deliberately NOT skipped when a request is already in flight. Bailing out
+    // there dropped the call silently and still resolved as though it had run:
+    // a view re-executing on a route-param change (product 1 -> 2 mid-flight)
+    // never issued the second request and rendered the first product forever.
+    // Overlap is instead resolved below by the token — newest request wins.
+    const token = ++requestToken
+    status.value = 'loading'
+    error.value = undefined
+
+    let result: ApiResult<T>
+    try {
+      result = await requestFn()
+    } catch (cause) {
+      result = { ok: false, error: toNetworkError(cause) }
+    }
+
+    // A superseded response must not overwrite the newer request's state.
+    if (disposed || token !== requestToken) {
+      return
+    }
+
+    if (result.ok) {
+      data.value = result.data
+      status.value = 'success'
+    } else {
+      // Cleared so that exactly one of `data`/`error` is ever populated.
+      // Leaving it meant a failed refresh rendered stale content beside an
+      // error banner, with no way for a view to tell which to trust.
+      data.value = undefined
+      error.value = result.error
+      status.value = 'error'
+    }
+  }
+
+  function retry(): Promise<void> {
+    return execute()
+  }
+
+  if (options.immediate ?? true) {
+    void execute()
+  }
+
+  return { status, data, error, execute, retry }
+}
