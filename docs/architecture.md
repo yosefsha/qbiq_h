@@ -133,14 +133,23 @@ frontend/src/
   router/            /, /products/:id, /cart, catch-all
 
 infra/
-  app.py             CDK app; stacks are <env>-network|data|backend|frontend|deploy
-  stacks/            network, data, backend, frontend, deploy
+  app.py             CDK app; stacks are <env>-network|data|ecr|backend|frontend|deploy
+  stacks/            network, data, ecr, backend, frontend, deploy
   config/            staging.py, prod.py
+
+scripts/
+  deploy-to-aws.sh   Stand an environment up from nothing, in one command
+  destroy-aws.sh     cdk destroy in reverse order, behind a typed confirmation
 
 .github/workflows/
   ci.yml             The test gate: ruff, pytest, eslint, vue-tsc, vitest, image builds
   deploy.yml         Deploy on merge to main (ADR-004)
 ```
+
+`ecr` is a stack of its own — one repository and two outputs — because the backend's task
+definitions pull `<repo>:latest` and that tag has to exist *before* the ECS service tries
+to start. Registry, then image, then everything that consumes the image;
+`scripts/deploy-to-aws.sh` walks that order.
 
 ## How a merge reaches production
 

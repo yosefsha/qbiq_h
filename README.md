@@ -263,15 +263,41 @@ source .venv/bin/activate
 cdk synth -c env=staging     # or -c env=prod
 ```
 
-`cdk synth` succeeds offline today. **Nothing has ever been deployed**, and several
-things must be replaced or configured before `cdk deploy` can work at all — the fake
-hosted zone, an empty ECR, and the GitHub-side settings the deploy role depends on. The
-full list, plus secrets rotation and log reading: **[docs/runbook.md](docs/runbook.md)**.
+Standing an environment up is one command:
 
-Deploys themselves run from [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
-on merge to `main`, assuming an AWS role through GitHub's OIDC provider — there is no
-CodePipeline and no stored AWS credential. Why, and what that costs, is in
-[ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md). It has never run.
+```bash
+./scripts/deploy-to-aws.sh staging      # or prod; staging is the default
+./scripts/destroy-aws.sh staging        # cdk destroy in reverse, behind a typed prompt
+```
+
+It deploys the ECR stack, builds and pushes the backend image, deploys the rest of the
+stacks, runs `alembic upgrade head` and `python -m app.seed` as one-off Fargate tasks
+inside the VPC, uploads the SPA to S3, invalidates CloudFront, forces a new ECS
+deployment, and prints the URL to open. It is re-runnable: a second run is an update, not
+an error.
+
+Two things worth knowing before reading the script:
+
+- **The ECR repository is its own stack (`<env>-ecr`), deployed before everything else.**
+  The backend's task definitions pull `<repo>:latest`, so an image has to exist between
+  the registry being created and the ECS service trying to start — otherwise the service
+  never stabilises and CloudFormation rolls the deploy back.
+- **The image is built `--platform linux/amd64`, and that is not optional.** Fargate here
+  is x86_64; an image built natively on Apple Silicon runs fine locally and dies in ECS
+  with `exec format error`.
+
+`cdk synth` succeeds offline today. **Nothing has ever been deployed and the script has
+never been run**, and several things must be replaced or configured before it can work at
+all — the fake hosted zone, and the GitHub-side settings the deploy role depends on. The
+full list, plus what each step of the script does by hand, secrets rotation and log
+reading: **[docs/runbook.md](docs/runbook.md)**.
+
+Deploys of *already-standing* environments run from
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) on merge to `main`,
+assuming an AWS role through GitHub's OIDC provider — there is no CodePipeline and no
+stored AWS credential. The workflow deliberately cannot create infrastructure, which is
+why the script above exists alongside it. Why, and what that costs, is in
+[ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md). It has never run either.
 
 ---
 

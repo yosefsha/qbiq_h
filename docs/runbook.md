@@ -5,13 +5,14 @@ done by hand.
 
 > ## Read this first: nothing has ever been deployed
 >
-> `cdk synth` succeeds for both environments and `actionlint` passes on the workflows —
-> that is the whole of what has been verified. No `cdk deploy` has been run, no AWS
-> resource has been created, and `.github/workflows/deploy.yml` has never executed
-> against an account. Every command in the "Deploying" section below **will fail
-> today** until the prerequisites listed there are satisfied. Sections that describe
-> operating a live system (secrets rotation, reading logs) are written from the stack
-> definitions and are marked as unexecuted.
+> `cdk synth` succeeds for both environments, `shellcheck` passes on both deploy
+> scripts, and `actionlint` passes on the workflows — that is the whole of what has been
+> verified. No `cdk deploy` has been run, no AWS resource has been created,
+> `scripts/deploy-to-aws.sh` has never been executed, and
+> `.github/workflows/deploy.yml` has never run against an account. Every command in the
+> "Deploying" section below **will fail today** until the prerequisites listed there are
+> satisfied. Sections that describe operating a live system (secrets rotation, reading
+> logs) are written from the stack definitions and are marked as unexecuted.
 
 ---
 
@@ -23,7 +24,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 cdk synth -c env=staging     # or -c env=prod
-cdk list -c env=staging      # staging-network, staging-data, staging-backend, staging-frontend, staging-deploy
+cdk list -c env=staging      # staging-network, staging-data, staging-ecr,
+                             # staging-backend, staging-frontend, staging-deploy
 ```
 
 `cdk.json` at the repo root points the CLI at `infra/app.py`, so run these from the repo
@@ -40,14 +42,29 @@ review; the existing suppressions each carry a written reason in the stack that 
 them. Synth currently emits warnings (duplicate subnets in the ALB and subnet-group
 properties, a stale RDS instance-class validator entry) but no errors.
 
-Five stacks per environment, deploy order following their dependencies:
-`<env>-network` → `<env>-data` → `<env>-backend` → `<env>-frontend` → `<env>-deploy`.
+Six stacks per environment. The deploy order follows their dependencies, with one step
+that is not a stack at all:
 
-That order is not a preference. `<env>-frontend` reads the backend's load balancer DNS
-name for the CloudFront `/api/*` behavior, so it cannot be deployed before
-`<env>-backend` exists. Every reference in the app runs one way — network → data →
-backend → frontend, with the deploy stack last — because a reference pointing back the
-other way is a `DependencyCycle` that fails at synth.
+`<env>-ecr` → **push an image** → `<env>-network` → `<env>-data` → `<env>-backend` →
+`<env>-frontend` → `<env>-deploy`
+
+That order is not a preference.
+
+- `<env>-ecr` is first, and alone, **because of an image push that has to happen between
+  it and `<env>-backend`.** `backend_stack.py` renders both of its task definitions
+  against `<repo>:latest`; while the repository was created by that same stack, the first
+  deploy created an empty registry and then waited for an ECS service whose tasks had
+  nothing to pull. The service never stabilised and CloudFormation rolled the stack back
+  after its timeout. Registry, image, then everything that consumes the image — see
+  `infra/stacks/ecr_stack.py`.
+- `<env>-frontend` reads the backend's load balancer DNS name for the CloudFront `/api/*`
+  behavior, so it cannot be deployed before `<env>-backend` exists.
+
+Every reference in the app runs one way — `backend → ecr`, `deploy → ecr`, and
+network → data → backend → frontend with the deploy stack last — because a reference
+pointing back the other way is a `DependencyCycle` that fails at synth. The ECR stack
+imports nothing from any other stack, which is what lets it be deployed into an empty
+account on its own.
 
 There is one ordering constraint *between* environments as well: `staging-deploy` creates
 the account-global GitHub OIDC provider and `prod-deploy` imports it, so staging's deploy
@@ -203,26 +220,119 @@ before it has assumed the role. `AWS_REGION` and `SERVICE_NAME` are optional and
 to `us-east-1` and `myapp`, matching `infra/config/`. There is deliberately **no AWS
 secret** — nothing long-lived is stored in GitHub.
 
-### 5. ECR is empty on a brand-new environment
+### 5. ECR must hold an image before `<env>-backend` is deployed
 
 `backend_stack.py` renders both the service and the migration task definitions against
 `<repo>:latest`. On a first deploy that tag does not exist, tasks cannot pull, the
-service never stabilises, and the stack rolls back. Break the cycle by pushing any image
-to the repository *before* deploying the backend stack:
+service never stabilises, and the stack rolls back after CloudFormation's timeout.
+
+This is why the repository lives in its own stack. `scripts/deploy-to-aws.sh` handles it
+(steps 3 and 4) and you do not have to think about it. By hand it is:
 
 ```bash
-aws ecr get-login-password | docker login --username AWS --password-stdin \
-  <account>.dkr.ecr.us-east-1.amazonaws.com
-docker build -t <account>.dkr.ecr.us-east-1.amazonaws.com/myapp-backend:latest backend
-docker push <account>.dkr.ecr.us-east-1.amazonaws.com/myapp-backend:latest
+cdk deploy staging-ecr -c env=staging --require-approval never
+ECR_URI=$(aws cloudformation describe-stacks --stack-name staging-ecr \
+  --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' --output text)
+
+aws ecr get-login-password | docker login --username AWS --password-stdin "$ECR_URI"
+docker build --platform linux/amd64 -t "$ECR_URI:latest" backend
+docker push "$ECR_URI:latest"
 ```
 
-The deploy workflow cannot do this for you: it needs the ECR repository that the backend
-stack creates, and it assumes a role that the deploy stack — deployed after the backend
-stack — creates. The bootstrap is by hand, once per environment.
+**`--platform linux/amd64` is not optional on an Apple Silicon machine.** Fargate here
+is x86_64. Without the flag Docker builds a native arm64 image that runs fine on the
+laptop, pushes without complaint, and then dies in ECS with `exec format error` — visible
+only in the task's CloudWatch stream, after ECS has already replaced the task, and
+indistinguishable at a glance from a health-check failure.
+
+The deploy workflow cannot do the bootstrap for you: it assumes a role that `<env>-deploy`
+creates, and that stack is deployed after the backend stack. The first image is pushed
+from a laptop, once per environment.
 
 Also note `cdk bootstrap` must have been run for the account/region pair; the assets
 these stacks synthesize need the CDK bootstrap bucket and roles.
+`scripts/deploy-to-aws.sh` checks for the `CDKToolkit` stack and bootstraps only if it is
+absent.
+
+---
+
+## Standing an environment up: `scripts/deploy-to-aws.sh`
+
+There are two different jobs here, and they are not the same tool.
+
+| Job | Tool | Runs |
+|---|---|---|
+| Create or rebuild an environment from nothing | `scripts/deploy-to-aws.sh` | By hand, from a laptop with real AWS credentials |
+| Ship a merged commit to an environment that already exists | `.github/workflows/deploy.yml` | Automatically, on merge to `main`, over OIDC |
+
+The workflow cannot do the first job: it has no permission to create infrastructure
+(deliberately — see the docstring on `deploy_stack.py`), and it cannot push the first
+image because it needs a role that does not exist until the stacks do. The script cannot
+do the second: it wants credentials on a human's machine.
+
+```bash
+./scripts/deploy-to-aws.sh staging      # or prod; staging is the default
+```
+
+**It has never been run.** Nothing in this project has ever been deployed, so every AWS
+call in it is written from the API contract and from `infra/stacks/*.py`. Treat the first
+real run as a first run.
+
+Nine steps, and each one is a thing that would otherwise be a line in this runbook:
+
+1. **Preflight.** Refuses an environment that is not `staging` or `prod`; fails if
+   `aws sts get-caller-identity` does not work or returns an account other than the one
+   in `infra/config/<env>.py`; fails if Docker is not running; fails if `.venv` is
+   missing or has no `aws_cdk` in it. Prints the account, region, identity and version
+   tag before touching anything. (`cdk.json` runs a bare `python3`, so the venv has to be
+   on `PATH` or synthesis dies with `ModuleNotFoundError: No module named 'aws_cdk'`.)
+2. **Bootstrap**, only if the `CDKToolkit` stack is absent.
+3. **`cdk deploy <env>-ecr`**, then read `RepositoryUri` from its outputs.
+4. **Build and push the image**, `--platform linux/amd64`, tagged twice: a traceable
+   `<env>-<git-sha>-<timestamp>` and the moving `latest` that the CDK task definitions
+   reference.
+5. **`cdk deploy`** for `<env>-network`, `<env>-data`, `<env>-backend`, `<env>-frontend`
+   and `<env>-deploy`, with `--require-approval never`. Expect 15-25 minutes; the banner
+   says so, because a silent RDS create looks exactly like a hang.
+6. **Migrate, then seed**, each as a one-off Fargate task on the `<service>-<env>-migrate`
+   task definition, in the private subnets with the ECS task security group — the only
+   source the RDS ingress rule admits. Both are idempotent.
+7. **Build and upload the SPA**: `npm ci && npm run build`, `aws s3 sync dist/ --delete`,
+   then a CloudFront invalidation on `/*` that it waits for.
+8. **Force a new ECS deployment** so the service picks up the pushed `latest`, and wait
+   for the service to stabilise.
+9. **Print** the CloudFront URL to open, the ALB DNS, the version tag and the git SHA.
+
+**On the migration exit code.** `aws ecs run-task` returning successfully means the task
+was *accepted* — not that it succeeded, and not even that it started. The script waits
+for the task to stop (`aws ecs wait tasks-stopped`), reads the `migrate` container's exit
+code with `describe-tasks`, and fails the whole script on any non-zero value. It also
+fails when there is **no** exit code at all, which is the `CannotPullContainerError` case
+(wrong architecture, or a tag that is not in the registry): a missing exit code is a task
+that never ran, not a task that passed. The ECS service is only updated after both the
+migration and the seed have exited `0`.
+
+**Re-running it is safe.** Every `describe-stacks` read is guarded so an absent stack is
+an empty string rather than an error, `cdk deploy` is a no-op when nothing changed, and
+`alembic upgrade head` and `python -m app.seed` are both idempotent. A second run is an
+update.
+
+### Tearing one down: `scripts/destroy-aws.sh`
+
+```bash
+./scripts/destroy-aws.sh staging
+```
+
+`cdk destroy` in reverse order (`deploy`, `frontend`, `backend`, `data`, `network`,
+`ecr`), skipping stacks that do not exist, behind a typed confirmation (`destroy staging`).
+
+**It does not delete your data, and what survives keeps billing you.** In production the
+RDS instance is `RETAIN`, so it stays and costs the full hourly instance price exactly as
+if you had not run the script — and deletion protection is on, so even a manual delete is
+refused until that is turned off. In staging it is `SNAPSHOT`, so the instance goes but a
+final snapshot is retained and billed per GB-month for as long as it exists. The ECR
+repository and the SPA bucket are also `RETAIN`. Removing any of them is a separate,
+deliberate act.
 
 ---
 

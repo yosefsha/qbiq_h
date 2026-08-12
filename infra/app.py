@@ -6,6 +6,7 @@ from config.prod import PROD_CONFIG
 from config.staging import STAGING_CONFIG
 from stacks.network_stack import NetworkStack
 from stacks.data_stack import DataStack
+from stacks.ecr_stack import EcrStack
 from stacks.backend_stack import (
     CONTAINER_NAME,
     MIGRATION_CONTAINER_NAME,
@@ -34,17 +35,25 @@ data = DataStack(
     vpc=network.vpc,
 )
 
-# References run in one direction only: backend -> data. The backend stack reads
-# the data stack's endpoints, secrets and security groups, and owns the ingress
-# rules that let its tasks in. Nothing in the data stack refers back to the
-# backend stack — that would be the `DependencyCycle` the network stack's
-# comment describes.
+# The container registry, alone and first. It references nothing — no VPC, no
+# data tier — so it can be deployed into an empty account before anything else
+# exists, which is the whole point: the backend stack's task definitions pull
+# `<repo>:latest`, so an image has to be pushed between this stack and that one.
+# See ecr_stack.py, and scripts/deploy-to-aws.sh for the order in practice.
+ecr = EcrStack(app, f"{target_env}-ecr", env=aws_env, env_config=env_config)
+
+# References run in one direction only: backend -> data, and backend -> ecr. The
+# backend stack reads the data stack's endpoints, secrets and security groups,
+# and owns the ingress rules that let its tasks in. Nothing in the data stack or
+# the ECR stack refers back to the backend stack — that would be the
+# `DependencyCycle` the network stack's comment describes.
 backend = BackendStack(
     app,
     f"{target_env}-backend",
     env=aws_env,
     env_config=env_config,
     vpc=network.vpc,
+    ecr_repo=ecr.repository,
     data_environment=data.task_environment,
     data_secrets=data.task_secrets,
     data_client_targets=data.client_targets,
@@ -83,7 +92,11 @@ DeployStack(
     env=aws_env,
     env_config=env_config,
     vpc=network.vpc,
-    ecr_repo=backend.ecr_repo,
+    # Straight from the ECR stack rather than via the backend stack, so this is
+    # one edge (deploy -> ecr) instead of a reference that only looks like it
+    # belongs to the backend. The `EcrRepositoryUri` output this produces is
+    # unchanged, so .github/workflows/deploy.yml needs no edit.
+    ecr_repo=ecr.repository,
     service=backend.service.service,
     task_definition=backend.service.task_definition,
     container_name=CONTAINER_NAME,
