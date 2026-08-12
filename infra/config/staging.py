@@ -9,7 +9,7 @@
 # before deploying (INF-06).
 STAGING_CONFIG = {
     "environment": "staging",
-    "account": "150758095463",
+    "account": "963352896991",
     "region": "us-east-1",
     "service_name": "myapp",
     "owner": "platform-team",

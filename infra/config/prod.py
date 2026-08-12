@@ -12,9 +12,16 @@
 #
 # `codestar_connection_arn` must be created and authorised by hand in the
 # console — it cannot be provisioned by CDK (INF-07).
+#
+# Context lookups (availability zones, hosted zone) are SEEDED in cdk.json
+# rather than resolved live, because no credentials on the machine this was set
+# up from reach this account. The seeded AZs are us-east-1a/1b. Delete those
+# seeds and re-synth from a session that can assume the CDK lookup role in this
+# account to replace them with real values — AZ names map to different physical
+# zones per account, so the seeds are a placeholder, not a fact.
 PROD_CONFIG = {
     "environment": "prod",
-    "account": "150758095463",
+    "account": "963352896991",
     "region": "us-east-1",
     "service_name": "myapp",
     "owner": "platform-team",
