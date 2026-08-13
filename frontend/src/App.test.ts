@@ -64,9 +64,31 @@ describe('App', () => {
 
     const nav = wrapper.get('nav')
     const links = nav.findAll('a')
-    expect(links.length).toBeGreaterThanOrEqual(3)
+    expect(links.length).toBeGreaterThanOrEqual(2)
     for (const link of links) {
       expect(link.text().trim().length).toBeGreaterThan(0)
     }
+  })
+
+  it('does not offer two nav links to the same destination', async () => {
+    // The wordmark and a "Catalogue" item both pointed at `/`. Duplicate
+    // destinations are noise in a nav, and a wasted stop for anyone tabbing
+    // through it or reading a screen reader's list of links.
+    const { wrapper } = await mountApp()
+
+    const destinations = wrapper
+      .get('nav')
+      .findAll('a')
+      .map((link) => link.attributes('href'))
+
+    expect(new Set(destinations).size).toBe(destinations.length)
+  })
+
+  it('keeps the header, and so the Cart, reachable while scrolled down a long page', async () => {
+    // Asserted on the class rather than by scrolling: jsdom has no layout, so
+    // `position: sticky` has no observable effect to test against.
+    const { wrapper } = await mountApp()
+
+    expect(wrapper.get('header').classes()).toContain('sticky')
   })
 })

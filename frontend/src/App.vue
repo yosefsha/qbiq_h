@@ -19,29 +19,33 @@ onMounted(() => {
   <div class="min-h-screen bg-slate-50">
     <!-- Visually hidden until focused: lets a keyboard user jump past the
          repeated header nav straight to the view's content, rather than
-         tabbing through "qbiq_h" / "Catalogue" / "Cart" on every page. -->
+         tabbing through "qbiq_h" / "Cart" on every page. -->
     <a
       href="#main-content"
       class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-slate-900 focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-white"
     >
       Skip to main content
     </a>
-    <header class="border-b border-slate-200 bg-white">
+    <!-- Sticky, because the Cart lives in here. Scrolled down a long
+         catalogue, the only route to the Cart was to scroll back to the top,
+         and the badge that tells a Shopper what is in it was off-screen for
+         most of the page. `z-40` sits under the skip link's `z-50` so a
+         focused skip link is never covered by the header it skips. -->
+    <header class="sticky top-0 z-40 border-b border-slate-200 bg-white">
       <nav
         class="mx-auto flex max-w-4xl items-center gap-6 px-4 py-4"
         aria-label="Main"
       >
+        <!-- The wordmark is the link to the catalogue. There used to be a
+             separate "Catalogue" item beside it pointing at the same `/`:
+             two adjacent links, same destination, which is noise in the nav
+             and a duplicated stop for anyone tabbing or using a screen
+             reader's link list. -->
         <RouterLink
           to="/"
           class="rounded-sm text-lg font-bold text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
         >
           qbiq_h
-        </RouterLink>
-        <RouterLink
-          to="/"
-          class="rounded-sm text-slate-600 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
-        >
-          Catalogue
         </RouterLink>
         <RouterLink
           to="/cart"
