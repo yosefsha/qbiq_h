@@ -325,10 +325,11 @@ The workflow cannot do the first job: it has no permission to create infrastruct
 image because it needs a role that does not exist until the stacks do. The script cannot
 do the second: it wants credentials on a human's machine.
 
-`scripts/deploy-frontend.sh` is the first script's steps 7 and 8 on their own — build the
-SPA, sync it to the bucket, invalidate CloudFront, wait for the invalidation — for the
-common case where nothing under `backend/` or `infra/` changed and the other seven steps
-would be expensive no-ops. **Its narrowness is the thing to remember about it:** it never
+`scripts/deploy-frontend.sh` is the first script's step 7 on its own — build the SPA, sync
+it to the bucket, invalidate CloudFront, wait for the invalidation — for the common case
+where nothing under `backend/` or `infra/` changed and the other eight steps would be
+expensive no-ops. Step 8, "Force a new ECS deployment", is deliberately not among them:
+it exists because step 4 moves the `latest` tag, and this script never touches an image. **Its narrowness is the thing to remember about it:** it never
 builds an image, registers a task definition, migrates, seeds, or touches the ECS
 service, so a backend change deployed with it succeeds and changes nothing. It also
 cannot create infrastructure — the bucket and distribution come from the `<env>-deploy`

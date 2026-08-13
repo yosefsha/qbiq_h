@@ -4,8 +4,11 @@
 #
 #   ./scripts/deploy-frontend.sh [staging|prod]     # defaults to staging
 #
-# Steps 7 of scripts/deploy-to-aws.sh, on their own: build the SPA, sync it to
-# the environment's bucket, invalidate CloudFront, wait for the invalidation.
+# Step 7 of scripts/deploy-to-aws.sh, on its own: build the SPA, sync it to the
+# environment's bucket, invalidate CloudFront, wait for the invalidation. Step 8
+# there — "Force a new ECS deployment" — is not part of this and is not missing
+# from it: it exists because step 4 moves the `latest` tag, and nothing here
+# builds or pushes an image.
 #
 # **This deploys a frontend-only change.** Nothing here builds an image, pushes
 # to ECR, registers a task definition, runs migrations, seeds the catalogue or
