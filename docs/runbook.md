@@ -3,16 +3,22 @@
 Operating the AWS deployment: what exists, what does not, and the steps that have to be
 done by hand.
 
-> ## Read this first: nothing has ever been deployed
+> ## Read this first: what has actually been run
 >
-> `cdk synth` succeeds for both environments, `shellcheck` passes on both deploy
-> scripts, and `actionlint` passes on the workflows — that is the whole of what has been
-> verified. No `cdk deploy` has been run, no AWS resource has been created,
-> `scripts/deploy-to-aws.sh` has never been executed, and
-> `.github/workflows/deploy.yml` has never run against an account. Every command in the
-> "Deploying" section below **will fail today** until the prerequisites listed there are
-> satisfied. Sections that describe operating a live system (secrets rotation, reading
-> logs) are written from the stack definitions and are marked as unexecuted.
+> **Staging has been deployed, torn down and redeployed from `scripts/deploy-to-aws.sh`**,
+> against a real account, on a real domain — <https://qbiq.yossidemo.click>. The commands
+> in the "Deploying" sections below have been executed rather than merely written.
+>
+> **Production has not.** No `prod-*` stack has ever existed, so every prod-specific
+> instruction here is derived from the stack definitions rather than from having run it.
+>
+> **`.github/workflows/deploy.yml` has never completed a deploy.** Its gate fails on the
+> first prerequisite — the `AWS_ACCOUNT_ID` repository variable is unset — and a push to
+> `main` resolves its target to `production`, which does not exist. Standing an
+> environment up is the script's job either way; see the table below.
+>
+> Sections describing operations that have not been exercised on a live system — secrets
+> rotation in particular — are marked as such where they appear.
 
 ---
 
@@ -306,25 +312,42 @@ Nothing reads `DeployAssignPublicIp` as a literal — both `deploy.yml` and
 
 ## Standing an environment up: `scripts/deploy-to-aws.sh`
 
-There are two different jobs here, and they are not the same tool.
+There are three different jobs here, and they are not the same tool.
 
 | Job | Tool | Runs |
 |---|---|---|
 | Create or rebuild an environment from nothing | `scripts/deploy-to-aws.sh` | By hand, from a laptop with real AWS credentials |
 | Ship a merged commit to an environment that already exists | `.github/workflows/deploy.yml` | Automatically, on merge to `main`, over OIDC |
+| Ship a **frontend-only** change to an environment that already exists | `scripts/deploy-frontend.sh` | By hand, same credentials as the first |
 
 The workflow cannot do the first job: it has no permission to create infrastructure
 (deliberately — see the docstring on `deploy_stack.py`), and it cannot push the first
 image because it needs a role that does not exist until the stacks do. The script cannot
 do the second: it wants credentials on a human's machine.
 
+`scripts/deploy-frontend.sh` is the first script's steps 7 and 8 on their own — build the
+SPA, sync it to the bucket, invalidate CloudFront, wait for the invalidation — for the
+common case where nothing under `backend/` or `infra/` changed and the other seven steps
+would be expensive no-ops. **Its narrowness is the thing to remember about it:** it never
+builds an image, registers a task definition, migrates, seeds, or touches the ECS
+service, so a backend change deployed with it succeeds and changes nothing. It also
+cannot create infrastructure — the bucket and distribution come from the `<env>-deploy`
+stack's outputs, and it says so rather than uploading into nothing if that stack is
+absent.
+
+```bash
+./scripts/deploy-frontend.sh staging      # or prod; staging is the default
+```
+
 ```bash
 ./scripts/deploy-to-aws.sh staging      # or prod; staging is the default
 ```
 
-**It has never been run.** Nothing in this project has ever been deployed, so every AWS
-call in it is written from the API contract and from `infra/stacks/*.py`. Treat the first
-real run as a first run.
+**It has been run against staging, repeatedly**, including a full teardown and rebuild —
+which is what the staging removal policies are for: the RDS instance, the ElastiCache
+group, the ECR repository and the SPA bucket all go with the stack, so a redeploy starts
+clean instead of colliding with a retained resource. It has **never** been run against
+prod, where every one of those is retained instead, so the first prod run is a first run.
 
 Nine steps, and each one is a thing that would otherwise be a line in this runbook:
 
