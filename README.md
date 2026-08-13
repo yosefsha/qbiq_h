@@ -1,6 +1,9 @@
 
 # a shord demo:
-https://drive.google.com/file/d/11wy3YPtgFo4koyXW3bDH_iT65TVeWu_L/view?usp=drive_link
+
+
+https://github.com/user-attachments/assets/0dcaa7e6-6e5a-4f35-aa1e-088a384b0722
+
 
 
 # qbiq_h — Mini E-Commerce
