@@ -44,19 +44,29 @@ function remove(): void {
 </script>
 
 <template>
+  <!-- Two layouts, because one did not fit. The four-column row is fixed-width
+       in three of them — the quantity stepper is 96px, the subtotal 80px, the
+       Remove button about 55px, plus 48px of gutters — so on a 375px phone the
+       name column was left with roughly 64px, and on a 320px one with almost
+       nothing. The name did not overflow, it collapsed to a couple of
+       characters per line, which reads as a rendering fault rather than a
+       narrow screen.
+
+       Below `sm` the name takes a row of its own and the controls sit beneath
+       it; from `sm` up the original single row returns. -->
   <li
-    class="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 border-b border-slate-200 py-4 last:border-b-0"
+    class="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 gap-y-3 border-b border-line py-4 last:border-b-0 sm:grid-cols-[1fr_auto_auto_auto] sm:gap-y-0"
     :data-product-id="item.productId"
   >
-    <div class="flex flex-col">
-      <span class="font-medium text-slate-900">{{ item.name }}</span>
-      <span class="text-sm text-slate-500">{{ unitPrice }} each</span>
+    <div class="col-span-3 flex flex-col sm:col-span-1">
+      <span class="font-medium text-ink">{{ item.name }}</span>
+      <span class="text-sm text-muted">{{ unitPrice }} each</span>
     </div>
 
     <div class="flex items-center gap-2">
       <button
         type="button"
-        class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+        class="flex h-9 w-9 items-center justify-center rounded-md border border-line text-body hover:bg-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50 sm:h-8 sm:w-8"
         :disabled="pending"
         :aria-label="`Decrease quantity of ${item.name}`"
         @click="decrement"
@@ -64,14 +74,14 @@ function remove(): void {
         −
       </button>
       <span
-        class="w-6 text-center tabular-nums text-slate-900"
+        class="w-6 text-center tabular-nums text-ink"
         data-test="quantity"
       >
         {{ item.quantity }}
       </span>
       <button
         type="button"
-        class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+        class="flex h-9 w-9 items-center justify-center rounded-md border border-line text-body hover:bg-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50 sm:h-8 sm:w-8"
         :disabled="pending"
         :aria-label="`Increase quantity of ${item.name}`"
         @click="increment"
@@ -81,7 +91,7 @@ function remove(): void {
     </div>
 
     <span
-      class="w-20 text-right font-medium text-slate-900"
+      class="w-20 text-right font-medium text-ink"
       data-test="line-subtotal"
     >
       {{ subtotal }}
