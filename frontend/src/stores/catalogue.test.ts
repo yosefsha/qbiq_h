@@ -1,4 +1,7 @@
+import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import type { Pinia } from 'pinia'
+import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../api/client'
@@ -34,8 +37,11 @@ function page(overrides: Partial<ProductPage> = {}): ProductPage {
 }
 
 describe('useCatalogueStore', () => {
+  let pinia: Pinia
+
   beforeEach(() => {
-    setActivePinia(createPinia())
+    pinia = createPinia()
+    setActivePinia(pinia)
     getMock.mockReset()
   })
 
@@ -150,6 +156,35 @@ describe('useCatalogueStore', () => {
     await Promise.all([first, second])
 
     expect(store.total).toBe(2)
+  })
+
+  it('still resolves requests after the component that created the store unmounts', async () => {
+    // The catalogue hung on this exact flow: open the catalogue, click into a
+    // product, come back. The store is a singleton, but it is *instantiated*
+    // during the first component's setup — so a lifecycle hook registered
+    // inside it binds to that component, not to the store. When
+    // CataloguePage unmounted, the store's in-flight guard flipped to
+    // "disposed" permanently, and every later response was discarded as
+    // stale: the request succeeded, the status never left `loading`, and the
+    // page showed skeletons forever.
+    getMock.mockResolvedValue({ ok: true, data: page() })
+
+    const owner = mount(
+      defineComponent({
+        setup() {
+          useCatalogueStore()
+          return () => null
+        },
+      }),
+      { global: { plugins: [pinia] } },
+    )
+    owner.unmount()
+
+    const store = useCatalogueStore()
+    await store.fetchProducts()
+
+    expect(store.loading).toBe(false)
+    expect(store.items).toEqual(page().items)
   })
 
   it('fetches the category list without a hardcoded fallback', async () => {

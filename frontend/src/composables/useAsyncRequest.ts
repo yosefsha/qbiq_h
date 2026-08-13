@@ -12,7 +12,7 @@
  * future change to that contract) can never surface as an unhandled promise
  * rejection here.
  */
-import { getCurrentInstance, onUnmounted, ref, shallowRef } from 'vue'
+import { getCurrentScope, onScopeDispose, ref, shallowRef } from 'vue'
 import type { Ref, ShallowRef } from 'vue'
 
 import type { ApiError, ApiResult, AsyncRequestStatus } from '../types'
@@ -60,11 +60,25 @@ export function useAsyncRequest<T>(
   // in-flight request (e.g. rapid retry clicks).
   let requestToken = 0
 
-  // Only registered when there's an active component instance, so this
-  // composable can also be driven directly in unit tests without Vue's
-  // "no active component instance" warning.
-  if (getCurrentInstance()) {
-    onUnmounted(() => {
+  // Bound to the current *effect scope*, not to the current component
+  // instance. The difference is the whole bug this guards against.
+  //
+  // `getCurrentInstance()` inside a Pinia setup store returns the component
+  // that happened to instantiate the store — Pinia runs the store's setup
+  // during that component's setup, and an effect scope does not clear the
+  // current instance. So `onUnmounted` here bound the *store's* disposal to
+  // the lifetime of one component. The catalogue store is created by
+  // CataloguePage; navigating into a product unmounted it, `disposed` flipped
+  // to true permanently, and every later response was discarded as stale by
+  // the guard below. The request succeeded, the status never left `loading`,
+  // and the catalogue showed skeletons forever on the way back.
+  //
+  // A scope is the right unit: a component's scope is disposed when it
+  // unmounts (so a view driving this directly still cancels), while a store's
+  // own scope outlives every component that uses it. `onScopeDispose` is also
+  // a no-op outside any scope, so the previous instance check is unnecessary.
+  if (getCurrentScope()) {
+    onScopeDispose(() => {
       disposed = true
     })
   }
