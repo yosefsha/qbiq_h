@@ -1,1 +1,28 @@
 @import 'tailwindcss';
+
+/* qbiq's palette, taken from the tokens their own site declares
+   (`qbiq.webflow.shared.css`) rather than eyedropped from a screenshot, so
+   these are the brand values and not an approximation of them:
+
+     --blue #0040ff   --cta-blue #0b67f9   --cream #f7f7f7
+     --black-i #151619   --black-ii #1d1d20
+     --dark-grey-i #2b323a   --dark-grey-ii #5d5d67
+     --light-grey-i #e4e4e4   --light-grey-ii #a5a5a6   --light-grey-iii #99999a
+
+   Named here by role rather than by hue — `ink`, `line`, `muted` — because a
+   component that says `text-body` keeps making sense if the brand's greys
+   move, while one that says `text-dark-grey-i` has to be rewritten. */
+@theme {
+  --color-brand: #0040ff;
+  --color-brand-cta: #0b67f9;
+
+  --color-ink: #151619;
+  --color-ink-soft: #1d1d20;
+
+  --color-body: #2b323a;
+  --color-muted: #5d5d67;
+  --color-faint: #99999a;
+
+  --color-cream: #f7f7f7;
+  --color-line: #e4e4e4;
+}
