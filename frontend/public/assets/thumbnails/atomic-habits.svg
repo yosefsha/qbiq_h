@@ -1,12 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4f46e5"/>
-      <stop offset="1" stop-color="#312e81"/>
-    </linearGradient>
-  </defs>
-  <rect width="640" height="360" fill="url(#bg)"/>
-  <rect x="40" y="40" width="560" height="280" rx="12" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2"/>
-  <text x="320" y="196" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="132" font-weight="700" fill="#ffffff" fill-opacity="0.95">AH</text>
-  <text x="320" y="256" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="600" letter-spacing="6" fill="#ffffff" fill-opacity="0.75">E-BOOK</text>
+  <rect width="640" height="360" fill="#f7f7f7"/>
+  <rect x="0.5" y="0.5" width="639" height="359" fill="none" stroke="#e4e4e4"/>
+  <g transform="translate(44 44)">
+    <rect x="2" y="2" width="48" height="48" rx="11" fill="none" stroke="#0040ff" stroke-width="4"/>
+    <circle cx="26" cy="26" r="12" fill="#0040ff"/>
+  </g>
+  <text x="320" y="200" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="132" font-weight="700" fill="#151619">AH</text>
+  <rect x="292" y="228" width="56" height="3" rx="1.5" fill="#0040ff"/>
+  <text x="320" y="272" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="600" letter-spacing="6" fill="#0040ff">E-BOOK</text>
 </svg>
