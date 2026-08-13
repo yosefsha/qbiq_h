@@ -44,32 +44,24 @@ onMounted(() => {
              reader's list of links. As inert branding it is `aria-hidden`
              artwork plus a wordmark, so assistive tech sees one link to each
              destination and nothing repeated. -->
-        <span class="flex items-center gap-2 text-ink select-none">
-          <svg
-            viewBox="0 0 32 32"
-            class="h-7 w-7"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <rect
-              x="1.6"
-              y="1.6"
-              width="28.8"
-              height="28.8"
-              rx="6"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="3.2"
-            />
-            <circle
-              cx="16"
-              cy="16"
-              r="7.4"
-              fill="currentColor"
-            />
-          </svg>
-          <span class="text-lg font-semibold tracking-tight">qbiq_h</span>
-        </span>
+        <!-- Served from /assets/ rather than the bucket root: that path is the
+             behaviour carrying CloudFront's year-long immutable cache policy
+             (frontend_stack.py:183), while the default behaviour is
+             CACHING_DISABLED and would re-fetch the logo from S3 on every page
+             view. Same reasoning as the product thumbnails, and it lives in
+             frontend/public/ for the same reason too — anything not in the
+             build is deleted by the deploy's `aws s3 sync --delete`.
+
+             `alt="qbiq"` rather than `alt=""`: this is the only thing naming
+             the site, so it is content, not decoration. It carries the
+             wordmark itself, which is why no text sits beside it. -->
+        <img
+          src="/assets/qbiq-logo.svg"
+          alt="qbiq"
+          width="111"
+          height="34"
+          class="h-8 w-auto select-none"
+        >
         <RouterLink
           to="/"
           class="ml-2 rounded-sm text-body hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
