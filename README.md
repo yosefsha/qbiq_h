@@ -134,6 +134,34 @@ set.
 | `SESSION_TTL_SECONDS` | `1800` | Sliding TTL on `session:{id}` and `cart:{id}` in Redis, and the cookie's `Max-Age` |
 | `LOG_LEVEL` | `INFO` | Root log level for the JSON logger |
 
+### Sessions and how long a Cart lives
+
+Shoppers are anonymous ([ADR-002](docs/adr/ADR-002-no-authentication.md)). The first
+request that touches a Cart mints an opaque `secrets.token_urlsafe(32)` token and returns
+it as an `HttpOnly; SameSite=Lax` cookie; the Cart itself lives server-side in Redis under
+`cart:{sessionId}` ([ADR-001](docs/adr/ADR-001-server-owned-cart.md)).
+
+**A Cart survives 30 minutes of inactivity** (`SESSION_TTL_SECONDS`, default `1800`), and
+the window **slides**. It is not a countdown from when an item was added: `session:{id}`,
+`cart:{id}` and the cookie's `Max-Age` all carry the same TTL, and it is refreshed on
+every request that touches the Cart — **including a read**. Opening the cart page is as
+much "activity" as changing a quantity, so a Shopper who is only looking at their Cart
+does not have it expire out from under them.
+
+A Cart ends in one of four ways:
+
+| | what happens |
+|---|---|
+| **30 minutes idle** | Redis expires `cart:{id}` and `session:{id}`; the cookie lapses with them, so the next visit starts a fresh, empty Cart rather than pointing at a Cart that is gone |
+| **Emptied by hand** | the key is `DEL`-ed once the last line is removed, rather than storing an empty map |
+| **Checkout** | the mock checkout issues a real `DELETE` per line, so the **server-side Cart is genuinely cleared** — it is not a client-only illusion that leaves a stale Cart in Redis |
+| **A product leaves the catalogue** | that line is dropped when the Cart is rendered; the rest of the Cart is unaffected |
+
+What will *not* end a Cart is memory pressure: Redis runs `maxmemory-policy noeviction`
+precisely because every key here carries a TTL, so a `volatile-*` policy would treat live
+Carts as eviction candidates alongside cache entries. A full node refuses writes loudly
+instead of discarding a Shopper's Cart quietly.
+
 ### Tests
 
 ```bash
@@ -280,6 +308,9 @@ Decisions that did not need an ADR but explain the code:
 - **Redis runs `maxmemory-policy noeviction`.** Every key carries a TTL, so a `volatile-*`
   policy would evict live Carts alongside cache entries. A full node refuses writes loudly
   rather than discarding state silently.
+- **The Cart's TTL slides on reads, not just writes.** A Shopper looking at their Cart is
+  active, so a read refreshes the 30-minute window rather than letting it run out
+  mid-session. See [Sessions and how long a Cart lives](#sessions-and-how-long-a-cart-lives).
 - **The cache is a decorator, not a branch.** `CachedProductRepository` wraps
   `SqlProductRepository` behind the same interface, so caching is composed in `deps.py`
   and neither the API nor the SQL layer knows it exists.
