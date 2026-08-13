@@ -16,13 +16,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-50">
+  <div class="min-h-screen bg-cream">
     <!-- Visually hidden until focused: lets a keyboard user jump past the
          repeated header nav straight to the view's content, rather than
          tabbing through "Catalogue" / "Cart" on every page. -->
     <a
       href="#main-content"
-      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-slate-900 focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-white"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-ink focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-white"
     >
       Skip to main content
     </a>
@@ -31,27 +31,58 @@ onMounted(() => {
          and the badge that tells a Shopper what is in it was off-screen for
          most of the page. `z-40` sits under the skip link's `z-50` so a
          focused skip link is never covered by the header it skips. -->
-    <header class="sticky top-0 z-40 border-b border-slate-200 bg-white">
+    <header class="sticky top-0 z-40 border-b border-line bg-white">
       <nav
         class="mx-auto flex max-w-4xl items-center gap-6 px-4 py-4"
         aria-label="Main"
       >
-        <!-- Two links, two destinations. The nav used to carry a `qbiq_h`
-             wordmark pointing at `/` as well, immediately beside "Catalogue",
-             which pointed at the same place: noise in the nav, a duplicated
-             tab stop, and two identical entries in a screen reader's list of
-             links. The label that names its destination is the one that
-             survived — "Catalogue" says where it goes, which a wordmark only
-             implies by convention. -->
+        <!-- The mark is deliberately NOT a link. qbiq's own nav puts a
+             logo on the left, but this nav's only route to the catalogue is
+             the "Catalogue" item beside it — making the mark a second link to
+             `/` would restore exactly the duplicate destination that was
+             removed: a wasted tab stop and two identical entries in a screen
+             reader's list of links. As inert branding it is `aria-hidden`
+             artwork plus a wordmark, so assistive tech sees one link to each
+             destination and nothing repeated. -->
+        <span class="flex items-center gap-2 text-ink select-none">
+          <svg
+            viewBox="0 0 32 32"
+            class="h-7 w-7"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect
+              x="1.6"
+              y="1.6"
+              width="28.8"
+              height="28.8"
+              rx="6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3.2"
+            />
+            <circle
+              cx="16"
+              cy="16"
+              r="7.4"
+              fill="currentColor"
+            />
+          </svg>
+          <span class="text-lg font-semibold tracking-tight">qbiq_h</span>
+        </span>
         <RouterLink
           to="/"
-          class="rounded-sm text-slate-600 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          class="ml-2 rounded-sm text-body hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
           Catalogue
         </RouterLink>
+        <!-- The Cart is the nav's call to action, styled as the pill qbiq
+             uses for one — their `cta small black` — rather than as a third
+             text link, so the thing a Shopper acts on does not read as
+             navigation. -->
         <RouterLink
           to="/cart"
-          class="flex items-center gap-1.5 rounded-sm text-slate-600 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          class="ml-auto flex items-center gap-1.5 rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-white transition hover:bg-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
           Cart
           <CartBadge />

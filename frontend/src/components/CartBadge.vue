@@ -13,13 +13,16 @@ import { useCartStore } from '../stores/cart'
 const cartStore = useCartStore()
 
 const itemCount = computed(() => cartStore.itemCount)
+// White on ink, not the other way round: this badge sits inside the header's
+// dark "Cart" pill (App.vue), where the previous near-black fill was all but
+// invisible. It stays legible on the brand-blue hover state too.
 </script>
 
 <template>
   <template v-if="itemCount > 0">
     <span
       data-test="cart-badge-count"
-      class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1.5 text-xs font-semibold text-white"
+      class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1.5 text-xs font-semibold text-ink"
       aria-hidden="true"
     >
       {{ itemCount }}
