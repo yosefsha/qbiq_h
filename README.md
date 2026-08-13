@@ -141,13 +141,14 @@ cd backend
 pytest -q
 ```
 
-170 tests. Two things to know:
+209 tests, all passing with Postgres and Redis up. Two things to know:
 
 - **Database- and Redis-backed tests skip themselves rather than fail** when Postgres is
   unreachable, or reachable but un-migrated (`alembic upgrade head` not yet run). Run
-  with `-rs` to see the skip reasons. With nothing running, the suite reports
-  `1 failed, 127 passed, 42 skipped` — the one failure being the test in the next bullet.
-  **In CI a skip is a failure** — see [Testing and CI](#testing-and-ci).
+  with `-rs` to see the skip reasons. With nothing running the suite reports
+  `3 failed, 155 passed, 51 skipped`; the failures are Redis-backed and go away once it
+  is reachable — see the next bullet for the one that needs a variable rather than a
+  running service. **In CI a skip is a failure** — see [Testing and CI](#testing-and-ci).
 - **One test does not honour `REDIS_URL`.**
   `tests/test_session.py::test_ttl_is_refreshed_on_every_access` connects using
   `TEST_REDIS_URL` (or `TEST_REDIS_PORT`), defaulting to `redis://localhost:6379/0`, and
@@ -214,7 +215,7 @@ cd frontend
 npm ci            # lockfile is the input; `npm install` is not equivalent
 npm run dev       # Vite dev server on :5173, proxying /api and /health
 npm run build     # vue-tsc -b && vite build  ->  dist/
-npm run test      # vitest run — 113 tests in 15 files
+npm run test      # vitest run — 143 tests in 17 files
 npm run lint      # eslint . --max-warnings 0
 ```
 
@@ -253,7 +254,49 @@ Diagram, request paths, and the VPC boundary: **[docs/architecture.md](docs/arch
 
 ---
 
+## Design decisions
+
+The four that were costly to reverse are written up as ADRs. Each records what was
+chosen, what was rejected, and what the choice costs — the cost is the part worth
+reading:
+
+| ADR | Decision | The trade |
+|---|---|---|
+| [001](docs/adr/ADR-001-server-owned-cart.md) | **The Cart is server-owned**, in Redis under `cart:{sessionId}` with a sliding TTL; Pinia mirrors the server's response rather than owning the Cart | The brief asked for both Pinia state *and* Cart endpoints, which leaves two possible homes for the truth. Server-authoritative means totals cannot be tampered with client-side, at the price of a round trip per mutation |
+| [002](docs/adr/ADR-002-no-authentication.md) | **No accounts.** The session cookie identifies an anonymous Shopper for the sole purpose of owning a Cart | A deliberate omission, not an oversight — and it is why Cart merge-on-login is the hard part of adding auth later |
+| [003](docs/adr/ADR-003-managed-aws-data-tier.md) | **RDS Postgres + ElastiCache Redis**, not a JSON mock store | The brief allows a file; real engines mean dev/prod parity and a schema, at the cost of managed-service spend and a migration path |
+| [004](docs/adr/ADR-004-github-actions-over-codepipeline.md) | **GitHub Actions over OIDC**, not CodePipeline + CodeBuild | A deliberate divergence from `CLAUDE.md`, written down rather than substituted quietly. No stored AWS credential; the cost is that the workflow cannot reach a private subnet, so migrations run as ECS tasks |
+
+Decisions that did not need an ADR but explain the code:
+
+- **One origin, everywhere.** `/api/*` is path-routed to the backend — nginx locally, a
+  CloudFront behavior in AWS — rather than living on a subdomain. That is what keeps the
+  session cookie `SameSite=Lax` instead of forcing it to `None`, and why there is no CORS
+  configuration in production.
+- **Prices are integer minor units plus a currency code**, never floats. Cart totals are
+  exact integer arithmetic, and no rounding has to be undone if payment is ever added.
+- **Filtering, sorting and paging are server-side**, in SQL. The client sends a query, not
+  a filter over a fetched array, so the catalogue can outgrow one page without a rewrite.
+- **Redis runs `maxmemory-policy noeviction`.** Every key carries a TTL, so a `volatile-*`
+  policy would evict live Carts alongside cache entries. A full node refuses writes loudly
+  rather than discarding state silently.
+- **The cache is a decorator, not a branch.** `CachedProductRepository` wraps
+  `SqlProductRepository` behind the same interface, so caching is composed in `deps.py`
+  and neither the API nor the SQL layer knows it exists.
+- **Errors are a typed result, not exceptions.** The API client returns
+  `ApiResult<T>`, so every call site has to handle the failure branch to compile —
+  network, HTTP and parse failures are distinguished rather than collapsed.
+
+---
+
 ## Deploying
+
+> ### Live: **<https://qbiq.yossidemo.click>**
+>
+> Staging, on the account below, served by CloudFront over HTTPS with an ACM certificate
+> and a Route 53 alias — both created by `infra/stacks/frontend_stack.py`, neither by
+> hand. The API is the same origin: `/api/*` is a cache behavior pointing at the ALB, so
+> there is no second hostname and no CORS in production.
 
 Infrastructure is AWS CDK (Python) in `infra/`, driven by `cdk.json` at the repo root.
 
@@ -294,18 +337,19 @@ Two things worth knowing before reading the script:
   trade-off table, and how to reverse any of it, is in
   [docs/runbook.md](docs/runbook.md).
 
-`cdk synth` succeeds offline today. **Nothing has ever been deployed and the script has
-never been run**, and several things must be replaced or configured before it can work at
-all — the fake hosted zone, and the GitHub-side settings the deploy role depends on. The
-full list, plus what each step of the script does by hand, secrets rotation and log
-reading: **[docs/runbook.md](docs/runbook.md)**.
+**Staging has been deployed and torn down repeatedly from this script**, which is what
+the teardown settings are for: in staging the RDS instance, the ElastiCache group, the
+ECR repository and the SPA bucket are all destroyed with the stack, so a redeploy starts
+clean rather than colliding with a retained resource. Production keeps every one of them.
+What each step does by hand, secrets rotation and log reading: **[docs/runbook.md](docs/runbook.md)**.
 
-Deploys of *already-standing* environments run from
+Deploys of *already-standing* environments are meant to run from
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) on merge to `main`,
 assuming an AWS role through GitHub's OIDC provider — there is no CodePipeline and no
 stored AWS credential. The workflow deliberately cannot create infrastructure, which is
 why the script above exists alongside it. Why, and what that costs, is in
-[ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md). It has never run either.
+[ADR-004](docs/adr/ADR-004-github-actions-over-codepipeline.md). **That workflow has
+never completed a deploy** — see Future development below for exactly what blocks it.
 
 ---
 
@@ -348,8 +392,9 @@ worse than none:
 - **Checkout is a mock and no order is stored.** The button lives entirely in the SPA
   (`src/stores/cart.ts`); there is no checkout or order endpoint, no payment, and no
   order history. Per [`CONTEXT.md`](CONTEXT.md), that is what Checkout *means* here.
-- **No caching layer.** `CACHE_TTL_SECONDS` is parsed into settings and read by nothing.
-  Every product query goes to Postgres.
+- **The catalogue cache is read-through with no invalidation on write.** There is no write
+  path in the API, so nothing can go stale except a reseed, which becomes visible after
+  `CACHE_TTL_SECONDS`. An admin that could edit products would need explicit invalidation.
 - **Staging is deployed; production is not.** `scripts/deploy-to-aws.sh staging` has run
   against a real account, and staging is deliberately minimal — one task, a single-node
   Redis with no failover, no RDS backups, and every resource set to be destroyed with the
@@ -421,6 +466,26 @@ somebody is working:
   a repository, and once they are not in the repository they cannot be in `dist/` — which
   is what lets the SPA bucket stay a strict mirror rather than something with exceptions
   carved into it.
+- **Authentication.** There is none, deliberately —
+  [ADR-002](docs/adr/ADR-002-no-authentication.md) — and the Cart is bound to an
+  anonymous session cookie instead. Adding accounts is not a bolt-on: the Cart is keyed
+  by session id in Redis ([ADR-001](docs/adr/ADR-001-server-owned-cart.md)), so a login
+  has to **merge** the anonymous Cart into the user's on sign-in, or a shopper loses what
+  they were holding at the moment they authenticate. The rest is conventional — an OIDC
+  provider (Cognito, Auth0) over the existing single origin, so the session cookie
+  mechanism and `SameSite=Lax` survive unchanged; a `user` table with the Cart's owner
+  becoming a user id where one exists; and authorization on every write path, which today
+  needs none because there is nothing a shopper can mutate but their own Cart.
+- **Payment, and orders that actually exist.** Checkout is a mock that clears the Cart
+  client-side; there is no order, no payment and no record afterwards, which is what
+  Checkout *means* in [`CONTEXT.md`](CONTEXT.md) today. Making it real is mostly the
+  parts that are not the payment call: an `order` table capturing prices **as they were
+  at purchase** rather than joining to a live catalogue, a hosted-checkout redirect
+  (Stripe Checkout or similar) so no card data ever reaches this service or its PCI
+  scope, an idempotency key so a double-submitted checkout cannot charge twice, and a
+  **webhook** as the source of truth for payment success — the browser returning from the
+  provider is not proof of anything. Prices are already integer minor units plus a
+  currency code, so the arithmetic is exact and no float rounding has to be undone first.
 - **The seed reconciles `thumbnail_url` and nothing else.** Re-seeding repairs that one
   field on existing rows; prices, descriptions and reviews are left as they are. A real
   catalogue would need a considered upsert policy rather than one field's worth of
