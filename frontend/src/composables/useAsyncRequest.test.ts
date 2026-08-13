@@ -1,9 +1,70 @@
+/* eslint-disable vue/one-component-per-file --
+   These are one-line test harnesses whose only job is to give the composable a
+   real component lifecycle to be disposed by; the rule is about app components. */
+import { mount } from '@vue/test-utils'
+import { defineComponent, effectScope } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ApiResult } from '../types'
 import { useAsyncRequest } from './useAsyncRequest'
 
 describe('useAsyncRequest', () => {
+  it('discards a response that lands after its owning component unmounts', async () => {
+    let resolve!: (result: ApiResult<{ id: string }>) => void
+    const requestFn = vi.fn<() => Promise<ApiResult<{ id: string }>>>(
+      () =>
+        new Promise((r) => {
+          resolve = r
+        }),
+    )
+
+    let handle!: ReturnType<typeof useAsyncRequest<{ id: string }>>
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          handle = useAsyncRequest(requestFn)
+          return () => null
+        },
+      }),
+    )
+
+    wrapper.unmount()
+    resolve({ ok: true, data: { id: '1' } })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // The view is gone, so writing to its state is pointless work at best and
+    // a leak at worst. Cancellation is scoped to the consumer that unmounted.
+    expect(handle.data.value).toBeUndefined()
+    expect(handle.status.value).toBe('loading')
+  })
+
+  it('keeps resolving when an unrelated component unmounts, because it belongs to its own scope', async () => {
+    // The counterpart to the test above, and the regression this file was
+    // missing: a composable created inside a long-lived scope (a Pinia store)
+    // must not be disposed by the unmount of whichever component happened to
+    // trigger that scope's creation.
+    const scope = effectScope()
+    let handle!: ReturnType<typeof useAsyncRequest<{ id: string }>>
+
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          scope.run(() => {
+            handle = useAsyncRequest<{ id: string }>(async () => ({ ok: true, data: { id: '1' } }))
+          })
+          return () => null
+        },
+      }),
+    )
+    wrapper.unmount()
+
+    await handle.execute()
+
+    expect(handle.status.value).toBe('success')
+    expect(handle.data.value).toEqual({ id: '1' })
+  })
+
   it('starts loading immediately and resolves to success', async () => {
     const requestFn = vi.fn<() => Promise<ApiResult<{ id: string }>>>(async () => ({
       ok: true,
