@@ -19,7 +19,7 @@ onMounted(() => {
   <div class="min-h-screen bg-cream">
     <!-- Visually hidden until focused: lets a keyboard user jump past the
          repeated header nav straight to the view's content, rather than
-         tabbing through "Catalogue" / "Cart" on every page. -->
+         tabbing through "Catalog" / "Cart" on every page. -->
     <a
       href="#main-content"
       class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-ink focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-white"
@@ -36,25 +36,25 @@ onMounted(() => {
         class="mx-auto flex max-w-4xl items-center gap-6 px-4 py-4"
         aria-label="Main"
       >
-        <!-- The mark is deliberately NOT a link. qbiq's own nav puts a
-             logo on the left, but this nav's only route to the catalogue is
-             the "Catalogue" item beside it — making the mark a second link to
-             `/` would restore exactly the duplicate destination that was
-             removed: a wasted tab stop and two identical entries in a screen
-             reader's list of links. As inert branding it is `aria-hidden`
-             artwork plus a wordmark, so assistive tech sees one link to each
-             destination and nothing repeated. -->
-        <!-- Served from /assets/ rather than the bucket root: that path is the
+        <!-- The logo is deliberately NOT a link. qbiq's own nav links its logo
+             home, but this nav's only route to the catalogue is the "Catalog"
+             item beside it — making the logo a second link to `/` would
+             restore exactly the duplicate destination that was removed: a
+             wasted tab stop and two identical entries in a screen reader's
+             list of links. Inert, the header carries branding and still
+             offers one link per destination.
+
+             `alt="qbiq"` rather than `alt=""`: the file carries the wordmark
+             itself, so this is the only thing naming the site — content, not
+             decoration, and the reason no text sits beside it.
+
+             Served from /assets/ rather than the bucket root: that path is the
              behaviour carrying CloudFront's year-long immutable cache policy
              (frontend_stack.py:183), while the default behaviour is
              CACHING_DISABLED and would re-fetch the logo from S3 on every page
-             view. Same reasoning as the product thumbnails, and it lives in
-             frontend/public/ for the same reason too — anything not in the
-             build is deleted by the deploy's `aws s3 sync --delete`.
-
-             `alt="qbiq"` rather than `alt=""`: this is the only thing naming
-             the site, so it is content, not decoration. It carries the
-             wordmark itself, which is why no text sits beside it. -->
+             view. It lives in frontend/public/ for the same reason the product
+             thumbnails do — anything not in the build is deleted by the
+             deploy's `aws s3 sync --delete`. -->
         <img
           src="/assets/qbiq-logo.svg"
           alt="qbiq"
@@ -64,9 +64,9 @@ onMounted(() => {
         >
         <RouterLink
           to="/"
-          class="ml-2 rounded-sm text-body hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          class="ml-2 rounded-sm font-bold text-body hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
-          Catalogue
+          Catalog
         </RouterLink>
         <!-- The Cart is the nav's call to action, styled as the pill qbiq
              uses for one — their `cta small black` — rather than as a third

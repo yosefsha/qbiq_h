@@ -70,7 +70,7 @@ describe('router', () => {
       expect(document.title).toBe('Cart · qbiq_h')
 
       await router.push('/')
-      expect(document.title).toBe('Catalogue · qbiq_h')
+      expect(document.title).toBe('Catalog · qbiq_h')
     })
   })
 })

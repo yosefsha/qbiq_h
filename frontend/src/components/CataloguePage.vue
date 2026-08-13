@@ -152,7 +152,7 @@ onUnmounted(() => {
   <section class="flex flex-col gap-6">
     <div class="flex flex-col gap-2">
       <h1 class="text-2xl font-semibold text-slate-900">
-        Catalogue
+        Catalog
       </h1>
       <p class="text-slate-600">
         Browse the full range of digital products.
