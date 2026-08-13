@@ -7,7 +7,7 @@ const router = createRouter({
       path: '/',
       name: 'catalogue',
       component: () => import('../components/CataloguePage.vue'),
-      meta: { title: 'Catalogue' },
+      meta: { title: 'Catalog' },
     },
     {
       path: '/products/:id',

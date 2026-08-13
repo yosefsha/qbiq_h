@@ -46,21 +46,22 @@ FONT_STACK = (
     "'Helvetica Neue', Arial, sans-serif"
 )
 
+#: qbiq's own tokens (see frontend/src/style.css for where they came from).
+#: Every tile shares these; only ACCENTS varies.
+CREAM = "#f7f7f7"
+LINE = "#e4e4e4"
+INK = "#151619"
 
-@dataclass(frozen=True)
-class Palette:
-    """The two gradient stops a category's thumbnails are painted with."""
-
-    start: str
-    end: str
-
-
-#: One palette per category slug, so a card's colour says which shelf it is on
-#: before a word of it is read.
-PALETTES: dict[str, Palette] = {
-    "e-books": Palette("#4f46e5", "#312e81"),
-    "software-licences": Palette("#0d9488", "#134e4a"),
-    "online-courses": Palette("#c2410c", "#7c2d12"),
+#: One accent per category slug, so a tile says which shelf it is on before a
+#: word of it is read — but with a single hue changing rather than three
+#: unrelated ones. Three saturated gradients (indigo, teal, orange) said
+#: "stock placeholder" precisely because no brand uses three unrelated hues at
+#: equal weight; qbiq's palette is one blue against a grey ramp, and this
+#: borrows that discipline.
+ACCENTS: dict[str, str] = {
+    "e-books": "#0040ff",  # --blue
+    "software-licences": "#7d8ea2",  # --silver-grey
+    "online-courses": "#1d1d20",  # --black-ii
 }
 
 
@@ -123,21 +124,27 @@ def render(thumbnail: Thumbnail) -> str:
     `ProductCard.vue`), so a title here would have a screen reader announce the
     same name twice.
     """
-    palette = PALETTES[thumbnail.category_slug]
+    accent = ACCENTS[thumbnail.category_slug]
     # Initials shrink as they lengthen, so "AWS" does not overrun the panel
     # that "DW" sits comfortably inside.
     initial_size = {1: 150, 2: 132, 3: 104}.get(len(thumbnail.initials), 88)
+    # Flat fills and a hairline border rather than a gradient: qbiq's own
+    # surfaces are flat, and a gradient is the single strongest tell that
+    # artwork came from a placeholder generator.
+    #
+    # The glyph in the corner is the logo's geometry — rounded square, centred
+    # circle — at tile scale, so a grid of these reads as one set rather than
+    # as 32 unrelated images.
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" width="{WIDTH}" height="{HEIGHT}">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="{palette.start}"/>
-      <stop offset="1" stop-color="{palette.end}"/>
-    </linearGradient>
-  </defs>
-  <rect width="{WIDTH}" height="{HEIGHT}" fill="url(#bg)"/>
-  <rect x="40" y="40" width="{WIDTH - 80}" height="{HEIGHT - 80}" rx="12" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2"/>
-  <text x="{WIDTH // 2}" y="196" text-anchor="middle" font-family="{FONT_STACK}" font-size="{initial_size}" font-weight="700" fill="#ffffff" fill-opacity="0.95">{thumbnail.initials}</text>
-  <text x="{WIDTH // 2}" y="256" text-anchor="middle" font-family="{FONT_STACK}" font-size="20" font-weight="600" letter-spacing="6" fill="#ffffff" fill-opacity="0.75">{thumbnail.label.upper()}</text>
+  <rect width="{WIDTH}" height="{HEIGHT}" fill="{CREAM}"/>
+  <rect x="0.5" y="0.5" width="{WIDTH - 1}" height="{HEIGHT - 1}" fill="none" stroke="{LINE}"/>
+  <g transform="translate(44 44)">
+    <rect x="2" y="2" width="48" height="48" rx="11" fill="none" stroke="{accent}" stroke-width="4"/>
+    <circle cx="26" cy="26" r="12" fill="{accent}"/>
+  </g>
+  <text x="{WIDTH // 2}" y="200" text-anchor="middle" font-family="{FONT_STACK}" font-size="{initial_size}" font-weight="700" fill="{INK}">{thumbnail.initials}</text>
+  <rect x="{WIDTH // 2 - 28}" y="228" width="56" height="3" rx="1.5" fill="{accent}"/>
+  <text x="{WIDTH // 2}" y="272" text-anchor="middle" font-family="{FONT_STACK}" font-size="19" font-weight="600" letter-spacing="6" fill="{accent}">{thumbnail.label.upper()}</text>
 </svg>
 """
 
