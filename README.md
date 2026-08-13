@@ -392,9 +392,6 @@ worse than none:
 - **Checkout is a mock and no order is stored.** The button lives entirely in the SPA
   (`src/stores/cart.ts`); there is no checkout or order endpoint, no payment, and no
   order history. Per [`CONTEXT.md`](CONTEXT.md), that is what Checkout *means* here.
-- **The catalogue cache is read-through with no invalidation on write.** There is no write
-  path in the API, so nothing can go stale except a reseed, which becomes visible after
-  `CACHE_TTL_SECONDS`. An admin that could edit products would need explicit invalidation.
 - **Staging is deployed; production is not.** `scripts/deploy-to-aws.sh staging` has run
   against a real account, and staging is deliberately minimal — one task, a single-node
   Redis with no failover, no RDS backups, and every resource set to be destroyed with the
@@ -466,6 +463,10 @@ somebody is working:
   a repository, and once they are not in the repository they cannot be in `dist/` — which
   is what lets the SPA bucket stay a strict mirror rather than something with exceptions
   carved into it.
+- **A write path would need cache invalidation.** The catalogue cache expires by TTL
+  alone, which is correct while the API is read-only: nothing can go stale except a
+  reseed. The first endpoint that edits a product has to invalidate
+  `products:id:{id}` and the listing keys alongside the write.
 - **Authentication.** There is none, deliberately —
   [ADR-002](docs/adr/ADR-002-no-authentication.md) — and the Cart is bound to an
   anonymous session cookie instead. Adding accounts is not a bolt-on: the Cart is keyed
