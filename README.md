@@ -1,3 +1,8 @@
+
+# a shord demo:
+https://drive.google.com/file/d/11wy3YPtgFo4koyXW3bDH_iT65TVeWu_L/view?usp=drive_link
+
+
 # qbiq_h — Mini E-Commerce
 
 A storefront for digital goods: a Vue 3 SPA over a FastAPI service, with Postgres for
