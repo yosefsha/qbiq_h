@@ -25,20 +25,28 @@ the catalogue and Redis for Sessions and Carts.
 
 ## Quick start
 
-One command, from a clean checkout, with Docker running:
+One command, from a clean checkout, with Docker running. The storefront comes in two
+builds of the same API, so the command names which one you want:
 
 ```bash
-docker compose up --build
+docker compose --profile py up --build     # Python / FastAPI
+docker compose --profile js up --build     # TypeScript / NestJS
 ```
 
 Then open **<http://localhost>** — port 80 by default, or whatever `WEB_PORT` you set
-(see below).
+(see below). Either profile serves the same storefront at the same address.
 
-That is the whole setup. There is no separate migration or seeding step: the `migrate`
-service runs `alembic upgrade head && python -m app.seed` and exits, and `api` waits for
-it to complete successfully, so the storefront comes up with a migrated, populated
-catalogue (12 products across 3 categories) rather than an empty one. Both halves are
-idempotent, so re-running `up` is safe.
+> `--profile` is a flag on `docker compose`, not on `up`, so it goes **before** the
+> subcommand. `docker compose up --profile js` fails with `unknown flag`.
+
+That is the whole setup. There is no separate migration or seeding step: the profile's
+migration service brings the schema up to head and loads the catalogue, then exits, and
+the API waits for it to complete successfully — so the storefront comes up with a
+migrated, populated catalogue (32 products across 3 categories) rather than an empty one.
+Every part is idempotent, so re-running `up` is safe.
+
+`--build` only builds what the chosen profile starts, so picking one backend never waits
+on the other's image.
 
 ### Ports
 
@@ -71,36 +79,46 @@ keeps CORS correct automatically.
 
 ---
 
-## Services and the `dev` profile
+## Services and profiles
 
-Everything below starts by default. Only `web-dev` sits behind a profile.
+A profile picks a backend. `postgres` and `redis` are in no profile and so are always
+started; everything else belongs to one.
+
+| Profile | What it starts |
+|---|---|
+| *(none)* | Postgres and Redis alone — the data tier with no API in front of it, which is what you want when running a backend or its test suite on the host |
+| `py` | The Python backend, its migration job, and nginx |
+| `js` | The NestJS backend, its migration job, and nginx |
+| `dev` | `web-dev`, the Vite dev server with HMR. Combine it with a backend profile |
 
 ```bash
-docker compose up                  # the storefront -> http://localhost:${WEB_PORT:-80}
-docker compose up web-dev          # Vite + HMR     -> http://localhost:${VITE_PORT:-5173}
+docker compose --profile py up --build         # Python API   -> http://localhost:${WEB_PORT:-80}
+docker compose --profile js up --build         # NestJS API   -> same address
+docker compose up                              # Postgres and Redis only
+docker compose --profile js --profile dev up   # NestJS API + Vite HMR -> :${VITE_PORT:-5173}
+docker compose --profile "*" build             # build every image, both backends
 ```
 
-Naming `web-dev` explicitly enables its profile and pulls in only its dependencies, so
-you get the dev server without also running nginx. `docker compose --profile dev up`
-runs both, which is occasionally useful for comparing them.
+nginx is in **both** backend profiles rather than being profile-less, so a bare
+`docker compose up` cannot start a storefront with no API behind it — a page that loads
+and then 502s on every request is a worse answer than not starting one.
 
 | Service | Profile | What it is |
 |---|---|---|
-| `postgres` | default | `postgres:16-alpine`, catalogue storage, volume `pgdata` |
-| `redis` | default | `redis:7-alpine`, Sessions and Carts. Started with `--maxmemory-policy noeviction` deliberately: every key carries a TTL, so an LRU policy could evict Carts. The production form of that question is the open item in [ADR-003](docs/adr/ADR-003-managed-aws-data-tier.md) |
-| `migrate` | default | Runs `alembic upgrade head && python -m app.seed`, then exits. Shares `api`'s image tag so schema and code can never drift |
-| `api` | default | FastAPI on uvicorn with 4 workers; health-checked on `GET /health` |
-| `web` | default | nginx serving the built SPA and **path-routing `/api/` to `api:8000`** |
-| `web-dev` | `dev` | `node:22-alpine` running `npm ci && npm run dev`, with Vite proxying `/api` to `http://api:8000` |
+| `postgres` | *(none)* | `postgres:16-alpine`, catalogue storage, volume `pgdata` |
+| `redis` | *(none)* | `redis:7-alpine`, Sessions and Carts. Started with `--maxmemory-policy noeviction` deliberately: every key carries a TTL, so an LRU policy could evict Carts. The production form of that question is the open item in [ADR-003](docs/adr/ADR-003-managed-aws-data-tier.md) |
+| `migrate` | `py` | Runs `alembic upgrade head && python -m app.seed`, then exits. Shares `api`'s image tag so schema and code can never drift |
+| `api` | `py` | FastAPI on uvicorn with 4 workers; health-checked on `GET /health` |
 | `migrate_js` | `js` | Creates `qbiq_h_js`, runs the TypeORM migration and seeds it, then exits. Shares `api_js`'s image tag for the same reason `migrate` shares `api`'s |
-| `api_js` | `js` | The same API in NestJS/TypeScript. Publishes the same `API_PORT` and answers to the same network name as `api` |
+| `api_js` | `js` | The same API in NestJS/TypeScript. Publishes the same `API_PORT` and answers to the network name `api` |
+| `web` | `py`, `js` | nginx serving the built SPA and **path-routing `/api/` to `api:8000`** |
+| `web-dev` | `dev` | `node:22-alpine` running `npm ci && npm run dev`, with Vite proxying `/api` to `http://api:8000` |
 
-nginx is the default because it is the shape that matches production: SPA and API on
-**one origin**, which is what keeps the session cookie `SameSite=Lax` instead of forcing
-it to `None` ([ADR-001](docs/adr/ADR-001-server-owned-cart.md)). It was previously behind
-a `prod-like` profile, which meant a plain `docker compose up` started an API with no
-storefront in front of it. `web-dev` gets you hot module reload; Vite's proxy reproduces
-the same single-origin illusion for the browser.
+nginx is in the default path for both backends because it is the shape that matches
+production: SPA and API on **one origin**, which is what keeps the session cookie
+`SameSite=Lax` instead of forcing it to `None`
+([ADR-001](docs/adr/ADR-001-server-owned-cart.md)). `web-dev` gets you hot module reload
+instead; Vite's proxy reproduces the same single-origin illusion for the browser.
 
 ### Two backends, one at a time
 
@@ -109,18 +127,19 @@ There are two implementations of the same API: `backend/` in Python/FastAPI, and
 at a time.
 
 ```bash
-docker compose up                  # the Python API  -> http://localhost:${WEB_PORT:-80}
-docker compose up api_js web       # the NestJS API, same storefront, same ports
+docker compose --profile py up --build     # the Python API  -> http://localhost:${WEB_PORT:-80}
+docker compose --profile js up --build     # the NestJS API, same storefront, same ports
 ```
 
 `api_js` publishes the same `API_PORT` and carries the network alias `api`, so
 `frontend/nginx.conf` and `frontend/vite.config.ts` need no knowledge of which one is
 running — they proxy to `http://api:8000` either way. Nothing under `frontend/` changes
-between the two.
+between the two, which is also why there is no `api_js` anywhere outside
+`docker-compose.yml`.
 
-Naming the services on the command line is what selects the second form. `docker compose
---profile js up` with no service names would start *both* backends, and they would
-collide on the published port.
+The profiles are what keep them apart. Both backends bind the same host port and answer
+to the same network name, so running them together would collide on both; putting each
+in its own profile makes that impossible to do by accident.
 
 The two keep their state apart: the NestJS service owns the database `qbiq_h_js` (its own
 TypeORM migration ledger, over deliberately the same schema) and Redis logical DB 1, so
@@ -138,7 +157,8 @@ Python 3.12 (the runtime image is `python:3.12-slim`). Everything below runs fro
 ### Without Docker
 
 Postgres and Redis still have to come from somewhere — the simplest route is to leave
-the two containers up (`docker compose up postgres redis`) and run the app on the host.
+the two containers up (`docker compose up`, which with no profile starts exactly those
+two) and run the app on the host.
 
 ```bash
 cd backend
@@ -280,8 +300,10 @@ own interfaces are synchronous.
 `npm test` runs the whole suite on a laptop with nothing else running: the unit and HTTP
 tests use the in-memory catalogue and a Redis double, and the repository, migration and
 seeder suites report as **skipped** when no Postgres answers. Point them at one with
-`TEST_DATABASE_URL`, or bring up `docker compose up postgres` — they create their own
-`qbiq_h_js_test` database. CI runs them against a service container and fails on any skip.
+`TEST_DATABASE_URL`, or bring up `docker compose up` — with no profile that starts
+Postgres and Redis and nothing else, which is exactly what the suite needs. The tests
+create their own `qbiq_h_js_test` database. CI runs them against a service container
+and fails on any skip.
 
 ### The one place the two services differ
 

@@ -1,33 +1,40 @@
 name: qbiq-h
 
-# `docker compose up --build` starts the whole storefront: Postgres, Redis, the
-# migration/seed job, the API, and nginx serving the built SPA. Open
-# http://localhost:${WEB_PORT:-80}.
+# The storefront comes in two builds of the same API, and you pick one:
 #
-# Every service below is profile-less — and therefore on by default — except
-# `web-dev`. nginx serves the built SPA and path-routes /api to the API, so the
-# two share one origin; that is what exercises the SameSite=Lax session cookie
-# (ADR-001) before it ever reaches CloudFront, and it is the shape a reviewer
-# should see first. This used to sit behind a `prod-like` profile, which meant a
-# plain `docker compose up` brought up an API with no storefront in front of it.
+#   docker compose --profile py up --build     Python / FastAPI
+#   docker compose --profile js up --build     TypeScript / NestJS
 #
-#   --profile dev   adds `web-dev`, the Vite dev server with HMR on
-#                   ${VITE_PORT:-5173}, proxying /api to the API container.
-#                   Use `docker compose up web-dev` to get *only* that plus its
-#                   dependencies, without also running nginx.
+# Either one brings up Postgres, Redis, that backend's migration/seed job, that
+# backend, and nginx serving the built SPA. Open http://localhost:${WEB_PORT:-80}.
+# `--build` builds only what the chosen profile starts, so picking `js` never
+# waits on the Python image and vice versa.
 #
-# There is a second backend, `api_js` — the same API in NestJS/TypeScript,
-# behind the `js` profile. The two are alternatives, never peers: `api_js`
-# publishes the same host port and answers to the same network name `api`, so
-# nginx and Vite reach whichever one is running with no configuration of their
-# own. Pick one:
+# NOTE `--profile` is a flag on `docker compose`, not on `up` — it has to come
+# before the subcommand. `docker compose up --profile js` fails with "unknown
+# flag".
 #
-#   docker compose up                    the Python API (this is the default)
-#   docker compose up api_js web         the NestJS API, same storefront
+# The two backends are alternatives, never peers. `api_js` publishes the same
+# host port and answers to the same network name `api`, so nginx and Vite reach
+# whichever one is running with no configuration of their own — nothing under
+# frontend/ knows which backend it is talking to. That is safe only because a
+# profile starts exactly one of them; running both would collide on port
+# ${API_PORT:-8000} and on the `api` alias.
 #
-# Naming the services on the command line is what selects the second form:
-# `docker compose --profile js up` with no service names would start *both*
-# backends, and they would collide on port ${API_PORT:-8000}.
+# Profiles, and what each is for:
+#
+#   (none)   Postgres and Redis alone. That is the data tier with no API in
+#            front of it, which is what you want when running a backend or its
+#            test suite on the host — see README, "Without Docker".
+#   py       The Python backend, plus nginx.
+#   js       The NestJS backend, plus nginx.
+#   dev      `web-dev`, the Vite dev server with HMR on ${VITE_PORT:-5173},
+#            proxying /api to whichever backend is up. Combine it with a
+#            backend profile: `docker compose --profile py --profile dev up`.
+#
+# nginx sits in both backend profiles because it is the shape that matches
+# production: SPA and API on one origin, which is what exercises the
+# SameSite=Lax session cookie (ADR-001) before it ever reaches CloudFront.
 
 services:
   postgres:
@@ -62,7 +69,7 @@ services:
       retries: 10
 
   # Brings the schema up to head and loads the catalogue, then exits. `api`
-  # waits on it completing successfully, so `docker compose up` yields a
+  # waits on it completing successfully, so starting the `py` profile yields a
   # populated database rather than an empty one that every product query
   # returns nothing from. Both the seeder and `alembic upgrade head` are
   # idempotent, so this is safe to re-run on every start.
@@ -71,6 +78,7 @@ services:
   # code that will query the schema — a drift between the two is exactly the
   # failure this service exists to make impossible.
   migrate:
+    profiles: ["py"]
     build:
       context: ./backend
     image: qbiq-h-api:local
@@ -83,6 +91,7 @@ services:
     restart: "no"
 
   api:
+    profiles: ["py"]
     build:
       context: ./backend
     image: qbiq-h-api:local
@@ -177,7 +186,13 @@ services:
       start_period: 10s
 
   web:
-    # No profile: this is the storefront, and `docker compose up` must serve it.
+    # In both backend profiles: whichever backend you pick, the storefront is
+    # what you came for, and it is the single-origin shape production uses.
+    # Listing it in both rather than leaving it profile-less is what keeps a
+    # bare `docker compose up` from starting nginx with no API behind it — a
+    # storefront that loads and then 502s on every request is a worse answer
+    # than not starting one.
+    profiles: ["py", "js"]
     build:
       context: ./frontend
     ports:

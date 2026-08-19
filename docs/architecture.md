@@ -78,8 +78,8 @@ overlooked.
 
 ## The same shape locally
 
-`docker compose up` reproduces it with nginx standing in for
-CloudFront:
+`docker compose --profile py up` (or `--profile js`, for the NestJS build of the same
+API) reproduces it with nginx standing in for CloudFront:
 
 ```mermaid
 flowchart LR
