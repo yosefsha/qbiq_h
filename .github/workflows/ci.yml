@@ -163,6 +163,82 @@ jobs:
             exit 1
           fi
 
+  backend-js:
+    name: Backend (NestJS) — eslint + tsc + jest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # The NestJS service lives in backend_js/.
+        working-directory: backend_js
+
+    # A real Postgres, for the same reason the Python job uses one: the
+    # repository, migration and seeder suites assert things — ILIKE escaping,
+    # index-backed ordering, the check constraints — that no in-memory fake can
+    # answer. Redis is not needed: this service's Redis surface is small enough
+    # that `test/fake-redis.ts` covers it exactly, and the TTL assertions read
+    # the expiry directly instead of sleeping.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: qbiq
+          POSTGRES_PASSWORD: qbiq
+          POSTGRES_DB: qbiq_h_js_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qbiq -d qbiq_h_js_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+          --health-start-period 10s
+
+    env:
+      TEST_DATABASE_URL: postgresql://qbiq:qbiq@localhost:5432/qbiq_h_js_test
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Matches the `node:22-alpine` base in backend_js/Dockerfile.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend_js/package-lock.json
+
+      - name: Install dependencies
+        # `npm ci`, not `npm install`: the lockfile is the input, and a lockfile
+        # that has drifted from package.json is itself a failure.
+        run: npm ci
+
+      - name: Lint (eslint)
+        # `npm run lint` carries `--max-warnings 0`, so the gate can actually
+        # fail.
+        run: npm run lint
+
+      - name: Type-check (tsc)
+        # Its own gate, so a type error is reported as a type error rather than
+        # as a build failure.
+        run: npm run typecheck
+
+      - name: Test (jest)
+        # A skip is a CI failure here, not a pass. The integration suites skip
+        # themselves when no Postgres answers — deliberate, so the suite stays
+        # usable on a laptop with nothing running — but in CI that same skip
+        # would let a broken repository through green. With the service
+        # container above, nothing should legitimately skip.
+        run: |
+          npm test -- --ci | tee jest-output.txt
+          if grep -qE '[0-9]+ skipped' jest-output.txt; then
+            echo "::error::Tests were skipped in CI — see the output above."
+            exit 1
+          fi
+
+      - name: Build
+        run: npm run build
+
   frontend:
     name: Frontend — eslint + vue-tsc + vitest + build
     runs-on: ubuntu-latest
@@ -218,6 +294,11 @@ jobs:
         # Build context is backend/, matching docker-compose.yml. The image is
         # built, not pushed: this stage only proves the Dockerfile still builds.
         run: docker build --pull -t qbiq-h-backend:${{ github.sha }} backend
+
+      - name: Build the NestJS backend image
+        # Build context is backend_js/, matching docker-compose.yml. Its builder
+        # stage runs `npm run build`, so a type error fails this job too.
+        run: docker build --pull -t qbiq-h-backend-js:${{ github.sha }} backend_js
 
       - name: Build the frontend image
         # The frontend Dockerfile runs `npm run build` inside the builder stage,

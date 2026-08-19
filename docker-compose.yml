@@ -15,6 +15,19 @@ name: qbiq-h
 #                   ${VITE_PORT:-5173}, proxying /api to the API container.
 #                   Use `docker compose up web-dev` to get *only* that plus its
 #                   dependencies, without also running nginx.
+#
+# There is a second backend, `api_js` — the same API in NestJS/TypeScript,
+# behind the `js` profile. The two are alternatives, never peers: `api_js`
+# publishes the same host port and answers to the same network name `api`, so
+# nginx and Vite reach whichever one is running with no configuration of their
+# own. Pick one:
+#
+#   docker compose up                    the Python API (this is the default)
+#   docker compose up api_js web         the NestJS API, same storefront
+#
+# Naming the services on the command line is what selects the second form:
+# `docker compose --profile js up` with no service names would start *both*
+# backends, and they would collide on port ${API_PORT:-8000}.
 
 services:
   postgres:
@@ -101,15 +114,83 @@ services:
       retries: 10
       start_period: 10s
 
+  # The NestJS backend's migration/seed job. Creates its own database
+  # (`qbiq_h_js`) first: the Postgres container only ever creates the Python
+  # service's, and the two keep separate migration ledgers over what is
+  # deliberately the same schema, so neither can half-migrate the other's.
+  #
+  # Shares `api_js`'s image tag for the same reason `migrate` shares `api`'s —
+  # the schema is migrated by the exact build that will query it.
+  migrate_js:
+    profiles: ["js"]
+    build:
+      context: ./backend_js
+    image: qbiq-h-api-js:local
+    command: ["sh", "-c", "node dist/create-database.js && node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js && node dist/seed.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-qbiq}:${POSTGRES_PASSWORD:-qbiq}@postgres:5432/${POSTGRES_DB_JS:-qbiq_h_js}
+      # A database that already exists, to issue CREATE DATABASE from — you
+      # cannot connect to the one you are about to create.
+      ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER:-qbiq}:${POSTGRES_PASSWORD:-qbiq}@postgres:5432/${POSTGRES_DB:-qbiq_h}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api_js:
+    profiles: ["js"]
+    build:
+      context: ./backend_js
+    image: qbiq-h-api-js:local
+    networks:
+      default:
+        # Answers to `api` as well as to its own name, which is what lets
+        # frontend/nginx.conf and vite.config.ts stay untouched — they proxy to
+        # http://api:8000 and reach whichever backend is running. Safe only
+        # because the two never run together.
+        aliases: ["api"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-qbiq}:${POSTGRES_PASSWORD:-qbiq}@postgres:5432/${POSTGRES_DB_JS:-qbiq_h_js}
+      # Logical DB 1, so Carts, Sessions and cache entries never collide with
+      # the Python stack's on DB 0.
+      REDIS_URL: redis://redis:6379/1
+      # Plain HTTP locally, so a Secure cookie would be dropped silently.
+      COOKIE_SECURE: "false"
+      # Explicit list: credentialed CORS forbids a wildcard (ADR-001).
+      ALLOWED_ORIGINS: "http://localhost,http://localhost:${WEB_PORT:-80},http://localhost:${VITE_PORT:-5173}"
+      CACHE_TTL_SECONDS: "300"
+      SESSION_TTL_SECONDS: "1800"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate_js:
+        condition: service_completed_successfully
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   web:
     # No profile: this is the storefront, and `docker compose up` must serve it.
     build:
       context: ./frontend
     ports:
       - "${WEB_PORT:-80}:80"
+    # `required: false` on both: exactly one backend is ever in the run, and
+    # nginx must wait for whichever one it is without demanding the other.
     depends_on:
       api:
         condition: service_healthy
+        required: false
+      api_js:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/health"]
       interval: 5s
@@ -135,6 +216,10 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        required: false
+      api_js:
+        condition: service_healthy
+        required: false
 
 volumes:
   pgdata:

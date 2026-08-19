@@ -1,0 +1,630 @@
+{
+  "categories": [
+    {
+      "slug": "e-books",
+      "label": "E-Books"
+    },
+    {
+      "slug": "software-licences",
+      "label": "Software Licences"
+    },
+    {
+      "slug": "online-courses",
+      "label": "Online Courses"
+    }
+  ],
+  "products": [
+    {
+      "name": "Deep Work: Rules for Focused Success",
+      "priceMinor": 1499,
+      "currency": "USD",
+      "shortDescription": "A practical guide to cultivating deep, distraction-free focus.",
+      "longDescription": "Deep Work lays out a framework for training your ability to focus without distraction on cognitively demanding tasks. Delivered as a DRM-free EPUB and PDF, readable on any device, with lifetime access to future revisions.",
+      "thumbnailUrl": "/assets/thumbnails/deep-work.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Priya N.",
+          "rating": 5,
+          "body": "Changed how I structure my mornings. Read it twice."
+        },
+        {
+          "author": "Marcus T.",
+          "rating": 4,
+          "body": "Dense in places but the core argument is worth it."
+        }
+      ]
+    },
+    {
+      "name": "Clean Architecture: A Craftsman's Guide",
+      "priceMinor": 2999,
+      "currency": "USD",
+      "shortDescription": "Software structure and design principles for maintainable systems.",
+      "longDescription": "A guide to the architectural principles behind long-lived, testable software: boundaries, dependency rules, and the trade-offs between them. Includes downloadable diagrams and companion code samples in the EPUB package.",
+      "thumbnailUrl": "/assets/thumbnails/clean-architecture.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Dana K.",
+          "rating": 5,
+          "body": "Reference-quality. I keep coming back to chapter 22."
+        },
+        {
+          "author": "Owen R.",
+          "rating": 4,
+          "body": "Some examples feel dated but the ideas hold up."
+        },
+        {
+          "author": "Yuki S.",
+          "rating": 5,
+          "body": "Best explanation of the dependency rule I've read."
+        }
+      ]
+    },
+    {
+      "name": "The Pragmatic Programmer, 20th Anniversary Edition",
+      "priceMinor": 2499,
+      "currency": "USD",
+      "shortDescription": "Timeless, practical advice for software craftsmanship.",
+      "longDescription": "A fully revised edition covering topics from personal responsibility to architectural techniques, updated for modern development practices. Includes the original tips list as a quick-reference PDF insert.",
+      "thumbnailUrl": "/assets/thumbnails/pragmatic-programmer.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Leah B.",
+          "rating": 5,
+          "body": "Every developer should read this early in their career."
+        }
+      ]
+    },
+    {
+      "name": "Atomic Habits",
+      "priceMinor": 1299,
+      "currency": "USD",
+      "shortDescription": "An easy and proven way to build good habits and break bad ones.",
+      "longDescription": "A practical framework for improving daily habits, built around the four laws of behaviour change. Delivered as EPUB, MOBI, and PDF with an accompanying habit-tracking template.",
+      "thumbnailUrl": "/assets/thumbnails/atomic-habits.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Grace P.",
+          "rating": 5,
+          "body": "Simple, actionable, and it actually stuck."
+        },
+        {
+          "author": "Tomas V.",
+          "rating": 3,
+          "body": "Good ideas but repetitive by the last third."
+        }
+      ]
+    },
+    {
+      "name": "PixelForge Studio — 1-Year Licence",
+      "priceMinor": 8900,
+      "currency": "USD",
+      "shortDescription": "Professional raster and vector image editing suite.",
+      "longDescription": "A full-featured image editor for photo retouching, vector illustration, and layered compositing. This licence covers one seat for twelve months, including all point releases and priority email support.",
+      "thumbnailUrl": "/assets/thumbnails/pixelforge-studio.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Ines M.",
+          "rating": 5,
+          "body": "Genuinely rivals the big-name editors at a third of the price."
+        },
+        {
+          "author": "Carlos D.",
+          "rating": 4,
+          "body": "Great value; the plugin ecosystem is still growing."
+        }
+      ]
+    },
+    {
+      "name": "TaskFlow Pro — Lifetime Licence",
+      "priceMinor": 6900,
+      "currency": "USD",
+      "shortDescription": "Project and task management for small teams.",
+      "longDescription": "A lifetime licence for TaskFlow Pro, covering unlimited projects, Gantt views, and up to ten team seats. One-time payment, no recurring fees, includes all future major versions.",
+      "thumbnailUrl": "/assets/thumbnails/taskflow-pro.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Wendy A.",
+          "rating": 5,
+          "body": "Paid once two years ago, still gets free updates."
+        },
+        {
+          "author": "Sam O.",
+          "rating": 4,
+          "body": "Solid, though the mobile app lags behind desktop."
+        }
+      ]
+    },
+    {
+      "name": "SecureVault Password Manager — 2-Year Licence",
+      "priceMinor": 3499,
+      "currency": "USD",
+      "shortDescription": "Encrypted password and secrets manager for individuals.",
+      "longDescription": "End-to-end encrypted vault for passwords, passkeys, and secure notes, with browser extensions for every major browser and biometric unlock on mobile. Two-year single-user licence, key delivered by email immediately after purchase.",
+      "thumbnailUrl": "/assets/thumbnails/securevault.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Hana J.",
+          "rating": 5,
+          "body": "Migration from my old manager took ten minutes, flawless since."
+        }
+      ]
+    },
+    {
+      "name": "CodeSight Static Analyzer — Team Licence",
+      "priceMinor": 14900,
+      "currency": "USD",
+      "shortDescription": "Static analysis and linting for polyglot codebases.",
+      "longDescription": "A static analysis suite covering Python, TypeScript, and Go, with CI integration and a shared dashboard. Team licence for up to fifteen developers, renewed annually with this key.",
+      "thumbnailUrl": "/assets/thumbnails/codesight.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Petra L.",
+          "rating": 4,
+          "body": "Caught real bugs in week one. CI plugin setup was fiddly."
+        },
+        {
+          "author": "Amir F.",
+          "rating": 5,
+          "body": "Dashboard makes triaging findings across repos painless."
+        }
+      ]
+    },
+    {
+      "name": "Backend Engineering with Python & FastAPI",
+      "priceMinor": 4999,
+      "currency": "USD",
+      "shortDescription": "Build and deploy production APIs with FastAPI.",
+      "longDescription": "A project-based course covering FastAPI fundamentals, SQLAlchemy, Alembic migrations, and deployment to a containerized cloud environment. Includes lifetime access and downloadable source code for every module.",
+      "thumbnailUrl": "/assets/thumbnails/backend-fastapi-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Noor H.",
+          "rating": 5,
+          "body": "The migrations module alone was worth the price."
+        },
+        {
+          "author": "Ben C.",
+          "rating": 5,
+          "body": "Clear pacing, real projects, no filler."
+        }
+      ]
+    },
+    {
+      "name": "Vue 3 & TypeScript: From Fundamentals to Production",
+      "priceMinor": 5499,
+      "currency": "USD",
+      "shortDescription": "Composition API, TypeScript, and Vite in a single track.",
+      "longDescription": "Covers the Composition API, typed props and emits, Pinia state management, and a full production build pipeline with Vite. Includes quizzes, a capstone project, and a completion certificate.",
+      "thumbnailUrl": "/assets/thumbnails/vue3-typescript-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Elif K.",
+          "rating": 4,
+          "body": "Great structure; wish there were more on testing."
+        },
+        {
+          "author": "Diego R.",
+          "rating": 5,
+          "body": "Finally a course that treats TypeScript as first-class."
+        }
+      ]
+    },
+    {
+      "name": "AWS for Backend Engineers: CDK in Practice",
+      "priceMinor": 6499,
+      "currency": "USD",
+      "shortDescription": "Infrastructure as code on AWS using the Python CDK.",
+      "longDescription": "Hands-on modules building VPCs, ECS Fargate services, RDS instances, and CI/CD pipelines with AWS CDK in Python. Ends with a capstone deploying a full three-tier application.",
+      "thumbnailUrl": "/assets/thumbnails/aws-cdk-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Fatima Z.",
+          "rating": 5,
+          "body": "Took this straight into a real project the same week."
+        }
+      ]
+    },
+    {
+      "name": "SQL for Application Developers",
+      "priceMinor": 3999,
+      "currency": "USD",
+      "shortDescription": "Practical, index-aware SQL for building real applications.",
+      "longDescription": "Covers query design, indexing strategy, transactions, and common pitfalls when an ORM sits between you and the database. Exercises run against a real Postgres instance provided in the browser sandbox.",
+      "thumbnailUrl": "/assets/thumbnails/sql-for-developers-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Ravi S.",
+          "rating": 4,
+          "body": "The indexing chapter changed how I write queries."
+        },
+        {
+          "author": "Claire M.",
+          "rating": 5,
+          "body": "Best SQL course I've taken, and I've taken a few."
+        }
+      ]
+    },
+    {
+      "name": "The Refactoring Field Guide",
+      "priceMinor": 1299,
+      "currency": "USD",
+      "shortDescription": "Small, safe changes that leave code better than you found it.",
+      "longDescription": "A catalogue of refactorings organised by the smell that motivates them, each with a worked before-and-after and the test that keeps it honest. DRM-free EPUB and PDF.",
+      "thumbnailUrl": "/assets/thumbnails/refactoring-field-guide.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Dana R.",
+          "rating": 5,
+          "body": "The smell-first ordering makes it usable at work."
+        },
+        {
+          "author": "Tom H.",
+          "rating": 4,
+          "body": "Wish the examples covered more than one language."
+        }
+      ]
+    },
+    {
+      "name": "Distributed Systems for the Impatient",
+      "priceMinor": 1899,
+      "currency": "USD",
+      "shortDescription": "Consensus, replication and failure, without the maths degree.",
+      "longDescription": "Explains why distributed systems fail the way they do — partial failure, clock skew, split brain — and what the standard answers actually cost. Diagrams over proofs throughout.",
+      "thumbnailUrl": "/assets/thumbnails/distributed-systems-impatient.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Priya N.",
+          "rating": 5,
+          "body": "Finally understand quorums. Worth it for that alone."
+        }
+      ]
+    },
+    {
+      "name": "Debugging: A Systematic Approach",
+      "priceMinor": 1199,
+      "currency": "USD",
+      "shortDescription": "Replace guessing with a method that converges on the cause.",
+      "longDescription": "A repeatable loop — reproduce, bisect, hypothesise, test — applied to memory corruption, race conditions, and the bugs that only appear in production.",
+      "thumbnailUrl": "/assets/thumbnails/debugging-systematic.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Marcus L.",
+          "rating": 5,
+          "body": "The bisect chapter paid for the book twice over."
+        },
+        {
+          "author": "Elena V.",
+          "rating": 4,
+          "body": "Solid, if a little dry in the middle third."
+        }
+      ]
+    },
+    {
+      "name": "Designing Data Contracts",
+      "priceMinor": 1699,
+      "currency": "USD",
+      "shortDescription": "Schemas that survive the second team that depends on them.",
+      "longDescription": "Versioning, compatibility and deprecation for APIs and event streams, with the migration strategies that let a producer change without breaking consumers it has never met.",
+      "thumbnailUrl": "/assets/thumbnails/designing-data-contracts.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Sofia K.",
+          "rating": 4,
+          "body": "The deprecation playbook is the best part."
+        }
+      ]
+    },
+    {
+      "name": "The Pragmatic Code Reviewer",
+      "priceMinor": 999,
+      "currency": "USD",
+      "shortDescription": "Reviews that find defects without starting fights.",
+      "longDescription": "What to look for, what to leave alone, and how to write a comment that gets acted on. Includes checklists for security, concurrency and API changes.",
+      "thumbnailUrl": "/assets/thumbnails/pragmatic-code-reviewer.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Ben A.",
+          "rating": 5,
+          "body": "Changed the tone of our whole review culture."
+        },
+        {
+          "author": "Yuki T.",
+          "rating": 4,
+          "body": "Short, which is the point."
+        }
+      ]
+    },
+    {
+      "name": "Observability from First Principles",
+      "priceMinor": 1599,
+      "currency": "USD",
+      "shortDescription": "Logs, metrics and traces, and when each one is the wrong tool.",
+      "longDescription": "Builds up from a single request id to distributed tracing, with a hard look at cardinality, sampling and what an alert should mean before anyone is paged.",
+      "thumbnailUrl": "/assets/thumbnails/observability-first-principles.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Nadia F.",
+          "rating": 5,
+          "body": "The chapter on alert fatigue should be mandatory."
+        }
+      ]
+    },
+    {
+      "name": "Writing for Engineers",
+      "priceMinor": 899,
+      "currency": "USD",
+      "shortDescription": "Design docs, incident reports and commit messages that land.",
+      "longDescription": "Technical writing aimed squarely at engineers: how to open a design doc so it gets read, how to write an incident report that teaches, and why the commit message is documentation.",
+      "thumbnailUrl": "/assets/thumbnails/writing-for-engineers.svg",
+      "categorySlug": "e-books",
+      "reviews": [
+        {
+          "author": "Chris P.",
+          "rating": 5,
+          "body": "My design docs get comments now instead of silence."
+        },
+        {
+          "author": "Amara O.",
+          "rating": 5,
+          "body": "Read it in a weekend, use it every week."
+        }
+      ]
+    },
+    {
+      "name": "QueryLens Profiler",
+      "priceMinor": 8900,
+      "currency": "USD",
+      "shortDescription": "Find the slow query before your users do.",
+      "longDescription": "Attaches to Postgres and MySQL, samples live traffic, and ranks statements by total time rather than worst case. Single-developer licence, one year of updates.",
+      "thumbnailUrl": "/assets/thumbnails/querylens-profiler.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Jonas W.",
+          "rating": 5,
+          "body": "Found an unindexed join costing us 40% of CPU."
+        }
+      ]
+    },
+    {
+      "name": "Sentinel Log Viewer",
+      "priceMinor": 4900,
+      "currency": "USD",
+      "shortDescription": "Structured log search that runs on your laptop.",
+      "longDescription": "Reads JSON logs from files, stdin or an S3 prefix, indexes them locally, and answers filter queries instantly. No agent, no server, nothing leaves the machine.",
+      "thumbnailUrl": "/assets/thumbnails/sentinel-log-viewer.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Ines G.",
+          "rating": 4,
+          "body": "Replaced three shell aliases and a lot of grep."
+        },
+        {
+          "author": "Peter M.",
+          "rating": 5,
+          "body": "The S3 mode is why I bought it."
+        }
+      ]
+    },
+    {
+      "name": "Cascade Diagram Studio",
+      "priceMinor": 6500,
+      "currency": "USD",
+      "shortDescription": "Architecture diagrams that stay in version control.",
+      "longDescription": "Text-first diagramming: describe the system, get a rendered diagram, and diff the source like any other file. Exports SVG and PNG at any scale.",
+      "thumbnailUrl": "/assets/thumbnails/cascade-diagram-studio.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Laura B.",
+          "rating": 5,
+          "body": "Our diagrams are finally reviewable in PRs."
+        }
+      ]
+    },
+    {
+      "name": "Payload API Client",
+      "priceMinor": 3900,
+      "currency": "USD",
+      "shortDescription": "A REST and GraphQL client that keeps requests in the repo.",
+      "longDescription": "Collections are plain files you commit, so a request that reproduced a bug is still there next month. Environments, secrets from your keychain, and scripted assertions.",
+      "thumbnailUrl": "/assets/thumbnails/payload-api-client.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Owen D.",
+          "rating": 4,
+          "body": "Committed collections are such an obvious idea."
+        },
+        {
+          "author": "Mei L.",
+          "rating": 5,
+          "body": "Fast, and it doesn't want an account."
+        }
+      ]
+    },
+    {
+      "name": "Bastion Secrets Manager",
+      "priceMinor": 12900,
+      "currency": "USD",
+      "shortDescription": "Team secrets with an audit trail, self-hosted.",
+      "longDescription": "Encrypted at rest with per-environment keys, access scoped by team, and every read recorded. Runs as a single binary against Postgres. Five-seat licence.",
+      "thumbnailUrl": "/assets/thumbnails/bastion-secrets-manager.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Tariq H.",
+          "rating": 5,
+          "body": "Audit log satisfied our auditor on the first pass."
+        }
+      ]
+    },
+    {
+      "name": "Meridian Load Tester",
+      "priceMinor": 7500,
+      "currency": "USD",
+      "shortDescription": "Load profiles that look like your actual traffic.",
+      "longDescription": "Replays production access patterns rather than hammering one endpoint, so the bottleneck it finds is the one you would have hit. Reports p50 through p99.9.",
+      "thumbnailUrl": "/assets/thumbnails/meridian-load-tester.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Greta S.",
+          "rating": 4,
+          "body": "Traffic replay is worth the price on its own."
+        },
+        {
+          "author": "Hugo C.",
+          "rating": 5,
+          "body": "Caught a connection-pool limit before launch."
+        }
+      ]
+    },
+    {
+      "name": "Atlas Schema Migrator",
+      "priceMinor": 5900,
+      "currency": "USD",
+      "shortDescription": "Reversible migrations with a dry run you can trust.",
+      "longDescription": "Plans every migration against a shadow database first and reports locks, rewrites and estimated duration before anything touches production.",
+      "thumbnailUrl": "/assets/thumbnails/atlas-schema-migrator.svg",
+      "categorySlug": "software-licences",
+      "reviews": [
+        {
+          "author": "Rafael Q.",
+          "rating": 5,
+          "body": "The lock report stopped a very bad Friday."
+        }
+      ]
+    },
+    {
+      "name": "Docker and Compose in Practice",
+      "priceMinor": 5900,
+      "currency": "USD",
+      "shortDescription": "Images, layers and Compose files that don't fight you.",
+      "longDescription": "Builds a multi-service application from an empty directory, covering multi-stage builds, layer caching, health checks and the differences that bite in production.",
+      "thumbnailUrl": "/assets/thumbnails/docker-compose-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Nils E.",
+          "rating": 5,
+          "body": "Layer caching finally clicked."
+        },
+        {
+          "author": "Aisha R.",
+          "rating": 4,
+          "body": "Good pace, assumes a little Linux."
+        }
+      ]
+    },
+    {
+      "name": "Testing Python at Scale",
+      "priceMinor": 6900,
+      "currency": "USD",
+      "shortDescription": "Fast suites, honest fixtures, and tests that stay green.",
+      "longDescription": "Pytest beyond the basics: fixture scope, parametrisation, test doubles that don't lie, and keeping a four-thousand-test suite under two minutes.",
+      "thumbnailUrl": "/assets/thumbnails/testing-python-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Lena M.",
+          "rating": 5,
+          "body": "The section on flaky tests earned its keep."
+        }
+      ]
+    },
+    {
+      "name": "System Design Interview Workshop",
+      "priceMinor": 8900,
+      "currency": "USD",
+      "shortDescription": "Eight designs, whiteboarded end to end.",
+      "longDescription": "Works through eight systems — a URL shortener to a news feed — with the estimation, the trade-offs and the follow-up questions interviewers actually ask.",
+      "thumbnailUrl": "/assets/thumbnails/system-design-workshop.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Victor A.",
+          "rating": 5,
+          "body": "Got the offer. The estimation drills did it."
+        },
+        {
+          "author": "Hana J.",
+          "rating": 4,
+          "body": "Two designs felt rushed, the rest were excellent."
+        }
+      ]
+    },
+    {
+      "name": "Terraform to Production",
+      "priceMinor": 7900,
+      "currency": "USD",
+      "shortDescription": "State, modules and the blast radius of a plan.",
+      "longDescription": "Remote state and locking, module boundaries that survive a second environment, and reading a plan for the replacements it is quietly proposing.",
+      "thumbnailUrl": "/assets/thumbnails/terraform-production-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Kofi B.",
+          "rating": 5,
+          "body": "'Read the plan' should be tattooed on everyone."
+        }
+      ]
+    },
+    {
+      "name": "Redis Patterns for Web Apps",
+      "priceMinor": 4900,
+      "currency": "USD",
+      "shortDescription": "Caching, sessions, queues — and their failure modes.",
+      "longDescription": "Each pattern paired with what happens when the node is lost: TTLs and eviction policies, cache stampedes, and why a queue on Redis needs more thought than it first appears.",
+      "thumbnailUrl": "/assets/thumbnails/redis-patterns-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Silvia D.",
+          "rating": 5,
+          "body": "The eviction-policy lesson saved our carts."
+        },
+        {
+          "author": "Adam F.",
+          "rating": 4,
+          "body": "Would like more on Cluster mode."
+        }
+      ]
+    },
+    {
+      "name": "Accessible Frontend Engineering",
+      "priceMinor": 6500,
+      "currency": "USD",
+      "shortDescription": "WCAG in practice, from semantics to focus management.",
+      "longDescription": "Keyboard navigation, focus traps, live regions and colour contrast, tested with real screen readers rather than an automated score.",
+      "thumbnailUrl": "/assets/thumbnails/accessible-frontend-course.svg",
+      "categorySlug": "online-courses",
+      "reviews": [
+        {
+          "author": "Grace W.",
+          "rating": 5,
+          "body": "Testing with an actual screen reader was eye-opening."
+        }
+      ]
+    }
+  ]
+}

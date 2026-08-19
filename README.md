@@ -92,6 +92,8 @@ runs both, which is occasionally useful for comparing them.
 | `api` | default | FastAPI on uvicorn with 4 workers; health-checked on `GET /health` |
 | `web` | default | nginx serving the built SPA and **path-routing `/api/` to `api:8000`** |
 | `web-dev` | `dev` | `node:22-alpine` running `npm ci && npm run dev`, with Vite proxying `/api` to `http://api:8000` |
+| `migrate_js` | `js` | Creates `qbiq_h_js`, runs the TypeORM migration and seeds it, then exits. Shares `api_js`'s image tag for the same reason `migrate` shares `api`'s |
+| `api_js` | `js` | The same API in NestJS/TypeScript. Publishes the same `API_PORT` and answers to the same network name as `api` |
 
 nginx is the default because it is the shape that matches production: SPA and API on
 **one origin**, which is what keeps the session cookie `SameSite=Lax` instead of forcing
@@ -99,6 +101,32 @@ it to `None` ([ADR-001](docs/adr/ADR-001-server-owned-cart.md)). It was previous
 a `prod-like` profile, which meant a plain `docker compose up` started an API with no
 storefront in front of it. `web-dev` gets you hot module reload; Vite's proxy reproduces
 the same single-origin illusion for the browser.
+
+### Two backends, one at a time
+
+There are two implementations of the same API: `backend/` in Python/FastAPI, and
+`backend_js/` in NestJS/TypeScript. They are alternatives, never peers — exactly one runs
+at a time.
+
+```bash
+docker compose up                  # the Python API  -> http://localhost:${WEB_PORT:-80}
+docker compose up api_js web       # the NestJS API, same storefront, same ports
+```
+
+`api_js` publishes the same `API_PORT` and carries the network alias `api`, so
+`frontend/nginx.conf` and `frontend/vite.config.ts` need no knowledge of which one is
+running — they proxy to `http://api:8000` either way. Nothing under `frontend/` changes
+between the two.
+
+Naming the services on the command line is what selects the second form. `docker compose
+--profile js up` with no service names would start *both* backends, and they would
+collide on the published port.
+
+The two keep their state apart: the NestJS service owns the database `qbiq_h_js` (its own
+TypeORM migration ledger, over deliberately the same schema) and Redis logical DB 1, so
+switching between them never leaves one reading the other's half-written Carts. Switching
+does mean starting with an empty Cart, since the Cart lives in the Redis database the
+running backend owns.
 
 ---
 
@@ -208,6 +236,71 @@ cd backend
 pip install ruff==0.16.2
 ruff check .
 ```
+
+---
+
+## Backend (NestJS)
+
+Node 22 (the runtime image is `node:22-alpine`). Everything below runs from
+`backend_js/`. It serves the same contract as `backend/` — the same routes, the same
+camelCase bodies, the same status codes, the same `session_id` cookie — so
+[the API section](#api) documents both.
+
+```bash
+npm ci
+npm run lint          # eslint, --max-warnings 0
+npm run typecheck     # tsc --noEmit
+npm test              # jest
+npm run build         # nest build -> dist/
+```
+
+The layering mirrors the Python service file for file, in Nest idiom:
+
+| Python | NestJS | What it holds |
+|---|---|---|
+| `app/settings.py` | `src/config/settings.ts` | Environment parsing, rule for rule |
+| `app/domain/` | `src/domain/` | Catalogue and Cart types, repository interfaces, the in-memory fake |
+| `app/db/models.py` | `src/db/entities/` | The persistence schema |
+| `alembic/versions/` | `src/migrations/` | The same tables, columns, indexes and constraints |
+| `app/repositories/` | `src/repositories/` | Postgres catalogue, Redis Cart, the caching decorator |
+| `app/api/`, `app/products.py` | `src/catalog/`, `src/cart/` | Controllers and the catalogue service |
+| `app/session.py` | `src/common/session/` | The anonymous Shopper's cookie and Redis record |
+| `app/seed.py` | `src/seed.ts` + `src/seed-data.json` | The catalogue itself |
+
+`seed-data.json` is extracted from `backend/app/seed.py` rather than retyped, so both
+services seed byte-identical copy and a diff between their responses shows only real
+differences.
+
+Two differences are inherent rather than incidental. The repository interfaces return
+promises, because every Node driver is asynchronous and there is no equivalent of
+FastAPI's threadpool escape hatch for a synchronous one. And one Redis client does the
+work of the Python service's two, which needs a sync and an async client only because its
+own interfaces are synchronous.
+
+`npm test` runs the whole suite on a laptop with nothing else running: the unit and HTTP
+tests use the in-memory catalogue and a Redis double, and the repository, migration and
+seeder suites report as **skipped** when no Postgres answers. Point them at one with
+`TEST_DATABASE_URL`, or bring up `docker compose up postgres` — they create their own
+`qbiq_h_js_test` database. CI runs them against a service container and fails on any skip.
+
+### The one place the two services differ
+
+Point both at the same database and every catalogue response is byte-identical — the
+same JSON, the same status codes, the same `'quoted'` error strings — except for the
+**body of a query-parameter validation failure**. Both answer 422 and both put the
+detail under `detail`, but the contents are their framework's own: Pydantic reports a
+list of structured error objects, class-validator a list of message strings.
+
+```
+GET /api/products?limit=101
+  FastAPI  422  {"detail":[{"type":"less_than_equal","loc":["query","limit"], ...}]}
+  NestJS   422  {"detail":["limit must not be greater than 100"]}
+```
+
+This is invisible to the storefront: `frontend/src/api/client.ts` renders `detail` only
+when it is a string, and falls back to the status text otherwise — so both backends show
+the same message. Reproducing Pydantic's error objects exactly would be a lot of brittle
+machinery for something nothing reads.
 
 ---
 
