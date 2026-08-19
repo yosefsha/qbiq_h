@@ -14,3 +14,5 @@ dist-ssr/
 *.local
 .env
 .env.*.local
+frontend/vue_fund.md
+prep.md
