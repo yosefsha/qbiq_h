@@ -899,8 +899,11 @@ The rules the parsing enforces are worth copying regardless of mechanism:
   userinfo early and the tail is parsed as the host.
 
 > **🐍 FastAPI:** `backend/app/settings.py` is the same design — a frozen dataclass built once at
-> import — and the two files agree rule for rule. One difference is a real bug in the TypeScript
-> version; see [rough edge #2](#18-known-rough-edges-in-this-codebase).
+> import — and the two files agree rule for rule, including on refusing to start when a value is
+> malformed. That last part was once a real divergence here: `Number.parseInt` never throws, so
+> `SESSION_TTL_SECONDS=5m` silently became a five-second session where Python raised at import.
+> `parseDurationSeconds` closes it, and rejects a non-positive duration too — Redis refuses `EX 0`,
+> so zero or negative can only fail later and further away.
 
 ---
 
@@ -1060,7 +1063,7 @@ app.useGlobalFilters(new AllExceptionsFilter())
 This is the difference between a test suite that means something and one that doesn't. A test
 asserting "the session cookie survives a 422" is worthless against a stripped-down app that never
 had the pipe or the filter under test. (It also duplicates `main.ts` — see
-[rough edge #6](#18-known-rough-edges-in-this-codebase).)
+[rough edge #5](#18-known-rough-edges-in-this-codebase).)
 
 ### Fakes at the right seam
 
@@ -1165,6 +1168,8 @@ Things to grep your own Nest code for.
 ## 18. Known rough edges in this codebase
 
 Found while writing this document, by reading the code and by poking the running service.
+One entry — a malformed TTL being accepted silently — has since been fixed and removed; the
+checked parser and its tests are in `src/config/settings.ts` and `test/settings.spec.ts`.
 **Nothing here has been fixed** — they are recorded so the tutorial doesn't teach from an example
 it is quietly papering over. Severity is this author's judgement.
 
@@ -1192,33 +1197,7 @@ in startup output rather than lost information. The fix is to narrow the paramet
 === 'string' ? { context: fields } : fields`), which also means `JsonLogger` would stop lying about
 implementing `LoggerService`.
 
-### 2. A malformed TTL is accepted silently instead of failing at boot — *confirmed, latent bug*
-
-`src/config/settings.ts` parses the two TTLs with `Number.parseInt`:
-
-```ts
-cacheTtlSeconds: Number.parseInt(source.CACHE_TTL_SECONDS ?? '300', 10),
-sessionTtlSeconds: Number.parseInt(source.SESSION_TTL_SECONDS ?? '1800', 10),
-```
-
-`Number.parseInt` never throws. Observed:
-
-| Env | NestJS | FastAPI |
-|---|---|---|
-| `CACHE_TTL_SECONDS=abc` | `NaN` | `ValueError` at import |
-| `SESSION_TTL_SECONDS=5m` | `5` | `ValueError` at import |
-
-The second is the dangerous one: `5m` silently becomes a **five-second** session TTL, so carts
-evaporate mid-shop and nothing in the logs says why. `NaN` reaches Redis as `EX NaN`, which errors
-on every cache write — degraded to a warning by the cache's own error handling, so the service
-runs permanently uncached and appears healthy.
-
-Every *other* rule in this file is deliberately strict — a partial `DB_*` set throws rather than
-falling back — so this is an inconsistency, not a design choice. It wants a checked parse that
-throws on `NaN` or a non-positive result. Not caught by `test/settings.spec.ts`, which asserts the
-defaults but never a malformed value.
-
-### 3. `Access-Control-Allow-Headers: *` is invalid for credentialed CORS — *confirmed, latent*
+### 2. `Access-Control-Allow-Headers: *` is invalid for credentialed CORS — *confirmed, latent*
 
 `main.ts` sets `allowedHeaders: ['*']` alongside `credentials: true`. The preflight response is:
 
@@ -1248,7 +1227,7 @@ curl -i -X OPTIONS localhost:${API_PORT:-8000}/api/cart/items \
   -H 'Access-Control-Request-Headers: content-type'
 ```
 
-### 4. No OpenAPI document — *confirmed, parity gap*
+### 3. No OpenAPI document — *confirmed, parity gap*
 
 `GET /openapi.json` returns **404** on the NestJS service and a full schema on the FastAPI one,
 which generates it from the route signatures for free. `backend/tests/test_products_api.py`
@@ -1260,7 +1239,7 @@ TypeScript one silently dropped.
 That is the real cost of the DTO-class approach versus Pydantic models, and it should be a
 conscious decision rather than an omission.
 
-### 5. Cart rendering is sequential — *confirmed, performance*
+### 4. Cart rendering is sequential — *confirmed, performance*
 
 `RedisCartRepository.render` resolves each line one at a time:
 
@@ -1277,7 +1256,7 @@ serial latency proportional to cart size, and on a cold cache it's *n* round tri
 `Promise.all` over the entries would be a two-line change. Deliberately not made yet: the Python
 original is synchronous and had no choice, and matching it kept the first port honest.
 
-### 6. `test/app-factory.ts` duplicates `main.ts` with nothing enforcing it — *design risk*
+### 5. `test/app-factory.ts` duplicates `main.ts` with nothing enforcing it — *design risk*
 
 The test factory re-registers CORS, both middlewares, the validation pipe and the exception
 filter, in the same order as `main.ts`. That is the right instinct — the tests exercise the real
@@ -1287,7 +1266,7 @@ passing against an app that no longer resembles what ships.
 The fix is to extract the "configure this app" half of `bootstrap()` into an exported
 `configureApp(app)` that both call. Worth doing before the next global is added.
 
-### 7. `@Injectable()` and `@Inject()` on classes the container never builds — *misleading*
+### 6. `@Injectable()` and `@Inject()` on classes the container never builds — *misleading*
 
 `SqlProductRepository`, `CachedProductRepository` and `RedisCartRepository` all carry
 `@Injectable()`, and the latter two carry `@Inject(REDIS_CLIENT)` / `@Inject(PRODUCT_REPOSITORY)`
@@ -1299,7 +1278,7 @@ and it invites someone to add them to a `providers` array where the third constr
 (`ttlSeconds`, a plain number) would fail to resolve. Either drop the decorators, or register the
 classes properly and drop the factory.
 
-### 8. Single process, where the Python service runs four workers — *deployment gap*
+### 7. Single process, where the Python service runs four workers — *deployment gap*
 
 | | Command | Concurrency |
 |---|---|---|
@@ -1315,7 +1294,7 @@ The usual answers are Node's `cluster` module, PM2, or — better on ECS — lea
 single-process and raising the task count, which is what the auto-scaling policy in
 `infra/stacks/backend_stack.py` already does. It should be a decision, not an accident.
 
-### 9. The readiness latch is not concurrency-safe — *minor*
+### 8. The readiness latch is not concurrency-safe — *minor*
 
 `HealthCheck.status()` checks `this.ready`, awaits the probes, then sets it. Two health checks
 arriving before the first completes will both run the probes. The consequence is one redundant
@@ -1323,7 +1302,7 @@ arriving before the first completes will both run the probes. The consequence is
 version is synchronous under a threadpool and doesn't have the interleaving at all — it is the
 kind of difference that `async` introduces silently when porting.
 
-### 10. A corrupt cart payload is a 500 — *minor, shared with the Python service*
+### 9. A corrupt cart payload is a 500 — *minor, shared with the Python service*
 
 `RedisCartRepository.readQuantities` calls `JSON.parse` on whatever is in `cart:{id}` with no
 guard, so a malformed value — hand-edited, or written by a future version with a different shape —
@@ -1332,7 +1311,7 @@ handles exactly this case (`'discarding malformed cache entry'`) and the cart do
 asymmetry is defensible (cache entries are disposable, cart state is not) but the failure mode is
 poor: the Shopper cannot empty their own cart to recover.
 
-### 11. Express sends ETags on API responses; FastAPI does not — *confirmed, divergence*
+### 10. Express sends ETags on API responses; FastAPI does not — *confirmed, divergence*
 
 Express enables ETag generation by default, and Nest does not turn it off, so every JSON response
 from this service carries one:

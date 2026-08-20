@@ -126,6 +126,64 @@ describe('settings', () => {
     expect(() => settingsFromEnv({ ALLOWED_ORIGINS: ' , ' })).toThrow(/at least one origin/)
   })
 
+  describe('TTL parsing', () => {
+    it.each(['CACHE_TTL_SECONDS', 'SESSION_TTL_SECONDS'])(
+      '%s defaults when unset',
+      (name) => {
+        const defaults = { CACHE_TTL_SECONDS: 300, SESSION_TTL_SECONDS: 1800 }
+        const settings = settingsFromEnv({}) as unknown as Record<string, number>
+        const field = name === 'CACHE_TTL_SECONDS' ? 'cacheTtlSeconds' : 'sessionTtlSeconds'
+        expect(settings[field]).toBe(defaults[name as keyof typeof defaults])
+      },
+    )
+
+    it('accepts a whole number of seconds, trimmed', () => {
+      const settings = settingsFromEnv({
+        CACHE_TTL_SECONDS: ' 600 ',
+        SESSION_TTL_SECONDS: '7200',
+      })
+
+      expect(settings.cacheTtlSeconds).toBe(600)
+      expect(settings.sessionTtlSeconds).toBe(7200)
+    })
+
+    it('treats a blank value as unset, as it does everywhere else', () => {
+      // ECS renders an unresolved variable as "", which must not be fatal.
+      expect(settingsFromEnv({ CACHE_TTL_SECONDS: '   ' }).cacheTtlSeconds).toBe(300)
+    })
+
+    // The bug this guards against: `Number.parseInt('5m')` is 5, so a mistyped
+    // duration became a five-second session with nothing in the log to say so.
+    it.each([
+      ['5m', 'a unit suffix — the one that silently became 5 seconds'],
+      ['abc', 'not a number at all'],
+      ['3.5', 'a fraction'],
+      ['1e3', 'exponent notation'],
+      ['300s', 'a trailing unit'],
+      ['0', 'zero, which Redis refuses as EX 0'],
+      ['-60', 'a negative duration'],
+      ['NaN', 'literally NaN'],
+    ])('rejects SESSION_TTL_SECONDS=%p (%s)', (value) => {
+      expect(() => settingsFromEnv({ SESSION_TTL_SECONDS: value })).toThrow(
+        /SESSION_TTL_SECONDS must be a/,
+      )
+    })
+
+    it('rejects a bad CACHE_TTL_SECONDS too, and names it', () => {
+      expect(() => settingsFromEnv({ CACHE_TTL_SECONDS: 'abc' })).toThrow(
+        /CACHE_TTL_SECONDS must be a whole number of seconds, got "abc"/,
+      )
+    })
+
+    it('fails at startup rather than degrading, like a partial DB_* set does', () => {
+      // The whole point: a configuration mistake stops the process. Previously
+      // `CACHE_TTL_SECONDS=abc` produced NaN, reached Redis as `EX NaN`, and
+      // was swallowed by the cache's own error handling — so the service ran
+      // permanently uncached while reporting itself healthy.
+      expect(() => settingsFromEnv({ CACHE_TTL_SECONDS: 'abc' })).toThrow(Error)
+    })
+  })
+
   it('is frozen, so nothing can reconfigure the process at runtime', () => {
     const settings = settingsFromEnv({})
     expect(Object.isFrozen(settings)).toBe(true)

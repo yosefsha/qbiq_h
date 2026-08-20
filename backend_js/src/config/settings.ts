@@ -84,6 +84,40 @@ function parseOrigins(value: string): readonly string[] {
 }
 
 /**
+ * Parses a duration in whole seconds, or throws.
+ *
+ * `Number.parseInt` is deliberately not used here. It never throws: it reads
+ * as many leading digits as it finds and ignores the rest, so
+ * `SESSION_TTL_SECONDS=5m` becomes `5` — a five-second session, carts
+ * evaporating mid-shop, and nothing in the log saying why — and
+ * `CACHE_TTL_SECONDS=abc` becomes `NaN`, which reaches Redis as `EX NaN` and
+ * fails every cache write, silently, for the life of the process.
+ *
+ * Both are configuration mistakes, and a configuration mistake must stop the
+ * process at startup rather than degrade it in a way that looks healthy. That
+ * is the same rule `databaseUrl` already applies to a partial `DB_*` set.
+ *
+ * Non-positive values are rejected too: Redis refuses `EX 0` outright, so a
+ * zero or negative TTL cannot do anything except fail later and further away.
+ */
+function parseDurationSeconds(name: string, value: string): number {
+  const trimmed = value.trim()
+  if (!/^\+?\d+$/.test(trimmed)) {
+    throw new Error(
+      `${name} must be a whole number of seconds, got ${JSON.stringify(value)}.`,
+    )
+  }
+
+  const seconds = Number(trimmed)
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) {
+    throw new Error(
+      `${name} must be a positive whole number of seconds, got ${JSON.stringify(value)}.`,
+    )
+  }
+  return seconds
+}
+
+/**
  * Returns a trimmed environment variable, treating blank as unset.
  *
  * ECS renders an unresolved value as an empty string rather than omitting the
@@ -187,8 +221,14 @@ export function settingsFromEnv(source: NodeJS.ProcessEnv = process.env): Settin
     redisUrl: redisUrl(source),
     cookieSecure: parseBool(source.COOKIE_SECURE ?? 'false'),
     allowedOrigins: parseOrigins(source.ALLOWED_ORIGINS ?? 'http://localhost:5173'),
-    cacheTtlSeconds: Number.parseInt(source.CACHE_TTL_SECONDS ?? '300', 10),
-    sessionTtlSeconds: Number.parseInt(source.SESSION_TTL_SECONDS ?? '1800', 10),
+    cacheTtlSeconds: parseDurationSeconds(
+      'CACHE_TTL_SECONDS',
+      env('CACHE_TTL_SECONDS', source) ?? '300',
+    ),
+    sessionTtlSeconds: parseDurationSeconds(
+      'SESSION_TTL_SECONDS',
+      env('SESSION_TTL_SECONDS', source) ?? '1800',
+    ),
     logLevel: (source.LOG_LEVEL ?? 'INFO').toUpperCase(),
   })
 }
