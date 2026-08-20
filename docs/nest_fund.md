@@ -1332,6 +1332,31 @@ handles exactly this case (`'discarding malformed cache entry'`) and the cart do
 asymmetry is defensible (cache entries are disposable, cart state is not) but the failure mode is
 poor: the Shopper cannot empty their own cart to recover.
 
+### 11. Express sends ETags on API responses; FastAPI does not — *confirmed, divergence*
+
+Express enables ETag generation by default, and Nest does not turn it off, so every JSON response
+from this service carries one:
+
+```
+$ curl -i localhost:${WEB_PORT:-80}/api/cart
+HTTP/1.1 200 OK
+ETag: W/"2c-6Ie/YPfEpZWL1mkv09XxuIT/e5A"
+```
+
+Starlette sets an ETag only on `FileResponse`/`StaticFiles` (`starlette/responses.py`), never on a
+`JSONResponse`, so the FastAPI service sends none. The browser therefore revalidates `GET
+/api/cart` against the NestJS backend and can receive a **304** — visible in the access log — where
+the same page against the Python backend always gets a 200.
+
+Benign today: a 304 is only returned when the ETag still matches, so the cart the browser reuses is
+by definition the current one, and no cache-mutating method (`POST`, `PATCH`, `DELETE`) is affected
+at all. Worth recording for two reasons. First, it is a real difference in observable HTTP
+behaviour between two services whose whole point is being interchangeable — the response *bodies*
+were diffed for parity, the *headers* never were. Second, there is **no `Cache-Control` header** on
+these responses either way, so freshness is left entirely to browser heuristics on an endpoint that
+is per-Shopper and must never be shared. `Cache-Control: no-store` on the cart routes would be the
+conservative fix, and would make the ETag question moot.
+
 ---
 
 ## 19. NestJS ↔ FastAPI translation table
